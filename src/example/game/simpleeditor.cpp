@@ -45,7 +45,7 @@ namespace JanSordid::SDL_Example
 		// for example, do not unload, just keep it loaded
 	}
 
-	bool EditorState::HandleEvent( const Event & evt )
+	bool EditorState::Input( const Event & evt )
 	{
 		switch( evt.type )
 		{
@@ -93,7 +93,7 @@ namespace JanSordid::SDL_Example
 			case SDL_EVENT_MOUSE_BUTTON_DOWN:
 			{
 				const SDL_MouseButtonEvent & me = evt.button;
-				if( me.button == 1 )
+				if( me.button == SDL_BUTTON_LEFT )
 				{
 					const FPoint mousePos = { me.x, me.y };
 					if( mousePos.x < _tileSetSize.x * _paletteScale
@@ -116,7 +116,7 @@ namespace JanSordid::SDL_Example
 						_isPainting = true;
 					}
 				}
-				else if( me.button == 3 )
+				else if( me.button == SDL_BUTTON_RIGHT )
 				{
 					_isPanning = true;
 				}
@@ -126,11 +126,11 @@ namespace JanSordid::SDL_Example
 			case SDL_EVENT_MOUSE_BUTTON_UP:
 			{
 				const SDL_MouseButtonEvent & me = evt.button;
-				if( me.button == 1 )
+				if( me.button == SDL_BUTTON_LEFT )
 				{
 					_isPainting = false;
 				}
-				else if( me.button == 3 )
+				else if( me.button == SDL_BUTTON_RIGHT )
 				{
 					_isPanning = false;
 				}
@@ -162,9 +162,9 @@ namespace JanSordid::SDL_Example
 		return true;
 	}
 
-	void EditorState::Update( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaT )
+	void EditorState::Update( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaT )
 	{
-		if( msSinceStart < _nextUpdateTimeMS )
+		if( timeSinceStart < _nextUpdateTime )
 			return;
 
 		const WorldState & curr = *_currState;
@@ -191,12 +191,12 @@ namespace JanSordid::SDL_Example
 			}
 		}
 
-		_nextUpdateTimeMS += UpdateDeltaTimeMS;
+		_nextUpdateTime += UpdateDeltaTime;
 
 		std::swap( _currState, _nextState );
 	}
 
-	void EditorState::Render( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaTNeeded )
+	void EditorState::Render( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaTNeeded )
 	{
 		const WorldState & curr = *_currState;
 
@@ -280,13 +280,13 @@ namespace JanSordid::SDL_Example
 			    << deltaTNeeded * 1000.0f
 			    << "ms";
 			{
-				constexpr const Color c = { 255, 255, 255, 255 };
+				constexpr Color c = { 255, 255, 255, 255 };
 				//SDL::C::TTF_SetFontHinting(font, ((t & 0x600) >> 9));
 				//SDL::C::TTF_SetFontOutline(font, 1);
 				Owned<Surface> surf = TTF_RenderText_Blended_Wrapped( _font, oss.str().c_str(), 0, c, 400 * _game.scalingFactor() );
 				Owned<Texture> t2   = SDL_CreateTextureFromSurface( renderer(), surf );
 				SDL_SetTextureColorMod( t2, 0, 0, 0 );
-				//SDL::C::SDL_SetTextureBlendMode(t2, SDL::C::SDL_BLENDMODE_BLEND);
+				//SDL_SetTextureBlendMode( t2, SDL_BLENDMODE_BLEND );
 				const FPoint p = { (f32)_tileSetSize.x * _paletteScale + 30, 20 };
 				for( const FPoint & offset : HSNR64::ShadowOffset::Cross )
 				{

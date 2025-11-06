@@ -12,7 +12,6 @@
 
 namespace JanSordid::SDL_Example
 {
-	using namespace JanSordid;
 	using namespace JanSordid::SDL;
 
 	class MyGame;
@@ -25,6 +24,8 @@ namespace JanSordid::SDL_Example
 	class ShooterState;
 	class EditorState;
 	class RoflState;
+	class MapEditorState;
+	class TGUIState;
 
 	// MyGameState-Index
 	// Why not in the classes themselves? For reusability!
@@ -38,6 +39,7 @@ namespace JanSordid::SDL_Example
 		Editor,
 		Rofl,
 		AdvEditor,
+		GUI,
 		// "Invalid" is a special value, do NOT reproduce in your own game,
 		// its only purpose is to show how hard it would be to crash the game
 		Invalid,
@@ -60,6 +62,7 @@ namespace JanSordid::SDL_Example
 		using Base::Base;
 	};
 
+
 	class MyGame final : public SDL::Game<MyGameState,MyGS>
 	{
 		using Base = Game;
@@ -68,6 +71,10 @@ namespace JanSordid::SDL_Example
 		MyGame();
 
 		bool HandleEvent( const Event & event ) override;
+		void Update( f32 deltaT ) override;
+		void Render( f32 deltaT ) override;
+		ImGuiOnly(
+			void RenderUI( f32 deltaTNeeded ) override; )
 	};
 
 
@@ -78,19 +85,20 @@ namespace JanSordid::SDL_Example
 	protected:
 		HSNR64::TileFont _tf { _game.renderer() };
 
-		Owned<Font>      _font;
-		Owned<Texture>   _image;
-		Owned<Music>     _music;
-		Owned<Chunk>     _sound;
-		Owned<Texture>   _blendedText;
+		Owned<Font>    _font;
+		Owned<Texture> _image;
+		Owned<Music>   _music;
+		Owned<Chunk>   _sound;
+		Owned<Texture> _blendedText;
 
 		FPoint _blendedTextSize = { 0, 0 };
 		u8     _textmode        = 0;
 
 		// Testvars controlled by ImGui
-		FPoint _textStartPoint = { 20, 30 };
-		i32    _colorIndex     = 9;
-		bool   _isDarkOutline  = true;
+		FPoint _textStartPoint    = { 20, 30 };
+		i32    _colorIndex        = 9;
+		bool   _isDarkOutline     = true;
+		bool   _showExampleWindow = false;
 
 	public:
 		/// Ctors & Dtor
@@ -105,11 +113,13 @@ namespace JanSordid::SDL_Example
 		void Exit( bool isStackedUpon ) override;
 		void Destroy()                  override;
 
-		bool HandleEvent( const Event & event ) override;
-		void Update( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaT       ) override;
-		void Render( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaTNeeded ) override;
+		bool Input( const Event & event ) override;
+		void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT       ) override;
+		void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
 		ImGuiOnly(
-			void RenderUI( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaTNeeded ) override;)
+			void RenderUI( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;)
+
+		//bool isFPSLimited() const noexcept override { return false; }
 	};
 
 	class PlasmaState final : public MyGameState
@@ -117,7 +127,7 @@ namespace JanSordid::SDL_Example
 		using Base = MyGameState;
 
 	protected:
-		static constexpr const int Scale = 8;
+		static constexpr int Scale = 8;
 
 		Owned<Font>    _font;
 		Owned<Texture> _blendedText;
@@ -134,10 +144,10 @@ namespace JanSordid::SDL_Example
 		void Init() override;
 		void Destroy() override;
 
-		bool Input() override;
-		bool HandleEvent( const Event & event ) override;
-		void Update( u64 framesSinceStart, u64 msSinceStart, f32 deltaT       ) override;
-		void Render( u64 framesSinceStart, u64 msSinceStart, f32 deltaTNeeded ) override;
+		bool StatefulInput() override;
+		bool Input( const Event & event ) override;
+		void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT       ) override;
+		void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
 	};
 
 	class SortState final : public MyGameState
@@ -148,7 +158,7 @@ namespace JanSordid::SDL_Example
 		struct Ball { f32 x, y, z, w; };
 
 		Owned<Texture> _image;
-		Vector<Ball>   _balls;
+		DynArray<Ball> _balls;
 
 		bool _isOrdered     = false;
 		bool _isTransparent = false;
@@ -161,9 +171,9 @@ namespace JanSordid::SDL_Example
 		void Init() override;
 		void Destroy() override;
 
-		bool HandleEvent( const Event & event ) override;
-		void Update( u64 framesSinceStart, u64 msSinceStart, f32 deltaT       ) override;
-		void Render( u64 framesSinceStart, u64 msSinceStart, f32 deltaTNeeded ) override;
+		bool Input( const Event & event ) override;
+		void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT       ) override;
+		void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
 	};
 
 	class CameraState : public MyGameState
@@ -171,13 +181,13 @@ namespace JanSordid::SDL_Example
 		using Base = MyGameState;
 
 	protected:
-		static constexpr const Array<FPoint,4> BackgroundStartOffset = {{
+		static constexpr Array<FPoint,4> BackgroundStartOffset = {{
 			{ 0,    -330 },
 			{ -350, -330 },
 			{ -450, -900 },
 			{ -800, -1500 },
 		}};
-		static constexpr const Array<FPoint,4> BackgroundFactor = {{
+		static constexpr Array<FPoint,4> BackgroundFactor = {{
 			{ 0.2f, 0.3f },
 			{ 0.4f, 0.45f },
 			{ 0.8f, 0.8f },
@@ -209,13 +219,13 @@ namespace JanSordid::SDL_Example
 		void Init() override;
 		void Destroy() override;
 
-		bool Input() override;
-		bool HandleEvent( const Event & event ) override;
-		void Update( u64 framesSinceStart, u64 msSinceStart, f32 deltaT       ) override;
-		void Render( u64 framesSinceStart, u64 msSinceStart, f32 deltaTNeeded ) override;
+		bool StatefulInput() override;
+		bool Input( const Event & event ) override;
+		void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT       ) override;
+		void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
 
-		FPoint CalcFluxCam( u64 totalMSec ) const;
-		void RenderLayer( Point windowSize, FPoint camPos, int index) const;
+		FPoint CalcFluxCam( Duration timeSinceStart ) const;
+		void RenderLayer( Point windowSize, FPoint camPos, int index ) const;
 	};
 
 	class ShooterState final : public CameraState
@@ -223,21 +233,21 @@ namespace JanSordid::SDL_Example
 		using Base = CameraState;
 
 	protected:
-		static constexpr const int SatRadius = 25;
+		static constexpr int SatRadius = 25;
 
-		Owned<Chunk>            _sound;
-		Array<Owned<Texture>,4> _projectile;
+		Owned<Chunk>               _sound;
+		Array<Owned<Texture>,4>    _projectile;
 		//ReuseFPoints rvProjectiles;
 
-		Vector<FPoint>           _enemyProjectiles;
-		Vector<FPoint>::iterator _enemyProjReuse;
-		int                      _numDeadEnemyProj = 0;
+		DynArray<FPoint>           _enemyProjectiles;
+		DynArray<FPoint>::iterator _enemyProjReuse;
+		int                        _numDeadEnemyProj = 0;
 
-		Vector<FPoint>           _myProjectiles;
-		Vector<FPoint>::iterator _myProjReuse;
-		int                      _numDeadMyProj = 0;
+		DynArray<FPoint>           _myProjectiles;
+		DynArray<FPoint>::iterator _myProjReuse;
+		int                        _numDeadMyProj = 0;
 
-		Vector<FRect> _enemies = {
+		DynArray<FRect> _enemies = {
 			{ 1100, 280, 160, 160 },
 			{ 1200, 500,  80,  80 },
 			{ 1100, 680,  80,  80 },
@@ -246,11 +256,11 @@ namespace JanSordid::SDL_Example
 		FRect           _player     = { 200, 530, 200, 100 };
 		Array<FPoint,5> _satellites = { { { 0, 0 } } };
 
-		f32    _progress      = 0;
-		u64    _shootCooldown = 0;
+		f32      _progress      = 0;
+		Duration _shootCooldown = {};
 
-		FPoint _spawnProjectileAt;           // Valid if x and y is >= 0
-		u64    _spawnProjectileSoundCD = 0;  //
+		FPoint   _spawnProjectileAt;           // Valid if x and y is >= 0
+		Duration _spawnProjectileSoundCD = {};
 
 	public:
 		// ctor
@@ -259,17 +269,17 @@ namespace JanSordid::SDL_Example
 		void Init() override;
 		void Destroy() override;
 
-		bool HandleEvent( const Event & event ) override;
-		void Update( u64 framesSinceStart, u64 msSinceStart, f32 deltaT       ) override;
-		void Render( u64 framesSinceStart, u64 msSinceStart, f32 deltaTNeeded ) override;
+		bool Input( const Event & event ) override;
+		void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT       ) override;
+		void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
 
 		//bool isFPSLimited() const noexcept override { return false; }
 
 		[[nodiscard]]
-		bool IsProjectileAlive(    const Vector<FPoint>::iterator & it ) const;
-		void SpawnEnemyProjectile( const FPoint pos );
-		void SpawnMyProjectile(    const FPoint pos );
-		void RetireProjectile(     const Vector<FPoint>::iterator & it );
-		void RetireMyProjectile(   const Vector<FPoint>::iterator & it );
+		bool IsProjectileAlive(    const DynArray<FPoint>::iterator & it ) const;
+		void SpawnEnemyProjectile( FPoint pos );
+		void SpawnMyProjectile(    FPoint pos );
+		void RetireProjectile(     const DynArray<FPoint>::iterator & it );
+		void RetireMyProjectile(   const DynArray<FPoint>::iterator & it );
 	};
 }

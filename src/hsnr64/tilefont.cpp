@@ -359,10 +359,10 @@ namespace JanSordid::HSNR64
 	{
 		//DebugOnly(
 		String skipChar; // UTF-8 char build over time, therefore a string
-		Rect dst     = { (int)dimension.x, (int)dimension.y, tilesize.x, tilesize.y };
-		int  skip    = 0;
-		u32  prefix  = 0;
-		u32  last_uc = '\n';
+		FRect  dst     = { dimension.x, dimension.y, (f32)tilesize.x, (f32)tilesize.y };
+		int    skip    = 0;
+		u32    prefix  = 0;
+		u32    last_uc = '\n';
 		for( const char c : text )
 		{
 			// ++ skip a lot of Unicode for now
@@ -379,7 +379,7 @@ namespace JanSordid::HSNR64
 				continue;
 			}
 
-			u32 uc = (unsigned char) c; // cast is necessary here
+			u32 uc = (unsigned char)c; // cast is necessary here
 			if( prefix != 0 )
 			{
 				if( prefix == 0xC2 )
@@ -441,7 +441,7 @@ namespace JanSordid::HSNR64
 			auto spec = SpecialPairs.find( combineChars( last_uc, uc ) );
 			if( spec != SpecialPairs.end() )
 			{
-				dst.x += spec->second;
+				dst.x += (f32)spec->second;
 			}
 
 			const CharMetric & met_curr = CharMetrics[uc];
@@ -498,19 +498,19 @@ namespace JanSordid::HSNR64
 
 				std::transform( std::begin(sum), std::end(sum), std::begin(ligOffs), std::begin(sum), std::plus<>() );
 
-				const auto min_e = *std::min_element( std::begin( sum ), std::end( sum ) );
-				dst.x -= min_e;
+				const i8 min_e = *std::min_element( std::begin( sum ), std::end( sum ) );
+				dst.x -= (f32)min_e;
 			}
 
 			// y offset for: g, p, q, y, etc.
-			const Point dst_off = (31 < uc && uc < 256) ? Point{ met_curr.xOff, met_curr.yOff } : Point{ 0, 0 };
+			const FPoint dst_off = (31 < uc && uc < 256) ? FPoint{ (f32)met_curr.xOff, (f32)met_curr.yOff } : FPoint{ 0, 0 };
 
 			constexpr int stride = 32;
-			const Point index{ (int) (uc % stride), (int) (uc / stride) };
+			const Point index{ (int)(uc % stride), (int)(uc / stride) };
 
 			// TODO: Do the conversion to f32 inside this whole function
 			const FRect src       = toF( toWH( tilesize ) + (index * 16) );
-			const FRect dst_final = toF( dst + dst_off ); // Angry text: + Point{-2+rand()%5, -1+rand()%3};
+			const FRect dst_final = dst + dst_off; // Angry text: + Point{-2+rand()%5, -1+rand()%3};
 
 			renderFunc( _renderer, _tiles, src, dst_final );
 
@@ -538,7 +538,7 @@ namespace JanSordid::HSNR64
 		constexpr u8    spacing       = 2;
 		constexpr Point tilesize      = { 16, 16 };
 
-		// HACK: Calling TF_RenderSingle two times in part does the exact same work twice, refactor out the common steps to make this more efficient
+		// HACK: Calling RenderSingle two times in part does the exact same work twice, refactor out the common steps to make this more efficient
 
 		SDL_SetTextureAlphaMod( _tiles, 127 );
 		SDL_SetTextureColorMod( _tiles, outlineColor.r, outlineColor.g, outlineColor.b );

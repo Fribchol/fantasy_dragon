@@ -1,11 +1,35 @@
 #include "example_game.hpp"
 #include "mapeditor.hpp"
 
-#include <hsnr64/tiles.hpp>
-
 namespace JanSordid::SDL_Example
 {
-	using namespace HSNR64;
+	/// static functions
+
+	lambda MapEditorState::uniformTile( const TileColor color, const FlipRot flipRot, const u16 index )
+	{
+		return [ color, flipRot, index ]( const Point pos, const Point size )
+		{
+			return Tile{ color, flipRot, index };
+		};
+	}
+
+	Tile MapEditorState::emptyTile( const Point pos, const Point size )
+	{
+		return Tile{ TileColor{ 0, 0 }, FlipRot::None, 0 };
+	}
+
+	Tile MapEditorState::randomTile( const Point pos, const Point size )
+	{
+		const int tIndex = 832 + (rand() & 255);
+		return Tile{ TileColor{ (u8)(27 + (rand() % 6)), 3 }, (FlipRot)(rand() % 9), (u16)tIndex };
+	}
+
+	Tile MapEditorState::randomSolidTile( const Point pos, const Point size )
+	{
+		return Tile{ TileColor{ (u8)(16 + (rand() % 6)), 3 }, FlipRot::None, 1000 };
+	}
+
+	/// instance functions
 
 	// Care: This is far from finished and still buggy
 	void MapEditorState::Init()
@@ -31,42 +55,29 @@ namespace JanSordid::SDL_Example
 		_tileMaps[0].center    = toF( _tileMaps[0].tileSet->tileSize ) * _tileMaps[0].sizeScale * _tileMaps[0].halfSize;
 		_tileMaps[0].size      = { 128, 128 };
 		_tileMaps[0].stride    = _tileMaps[0].size.x; // Needed if tileMap.tiles is one dimensional
-	//	tileMaps[0].scaleMode = SDL_ScaleModeBest;
+	//	_tileMaps[0].scaleMode = SDL_ScaleModeBest;
 
 		// TODO: Move this to a "create" method?
 		_tileMaps[0].tiles.resize( _tileMaps[0].size.x * _tileMaps[0].size.y );
 
-		_tileMaps[1].tileSet   = &_tileSet;
-		_tileMaps[1].tileDist  = toF( _tileMaps[1].tileSet->tileSize );
-	//	tileMaps[1].tileDist  = { 15, 15 };
-		_tileMaps[1].sizeScale = { 2, 2 };
-		_tileMaps[1].center    = toF( _tileMaps[1].tileSet->tileSize ) * _tileMaps[1].sizeScale * _tileMaps[1].halfSize;
-		_tileMaps[1].size      = { 128, 128 };
-		_tileMaps[1].stride    = _tileMaps[1].size.x; // Needed if tileMap.tiles is one dimensional
-	//	tileMaps[1].scaleMode = SDL_ScaleModeBest;
+		_tileMaps[1].tileSet     = &_tileSet;
+		_tileMaps[1].tileDist    = toF( _tileMaps[1].tileSet->tileSize );
+	//	_tileMaps[1].tileDist    = { 15, 15 };
+		_tileMaps[1].tileOffset  = { 8, 8 }; // TODO: Not yet used
+		_tileMaps[1].sizeScale   = { 2, 2 };
+		_tileMaps[1].scrollScale = { 1, 1 };
+		_tileMaps[1].center      = toF( _tileMaps[1].tileSet->tileSize ) * _tileMaps[1].sizeScale * _tileMaps[1].halfSize;
+		_tileMaps[1].size        = { 128, 128 };
+		_tileMaps[1].stride      = _tileMaps[1].size.x; // Needed if tileMap.tiles is one dimensional
+	//	_tileMaps[1].scaleMode   = SDL_ScaleModeBest;
 
 		_tileMaps[1].tiles.resize( _tileMaps[1].size.x * _tileMaps[1].size.y );
 
 		// Fill map layer 0 with randomness, color layer
-		for( int y = 0; y < _tileMaps[0].size.y; ++y )
-		{
-			for( int x = 0; x < _tileMaps[0].size.x; ++x )
-			{
-				const int index  = x + y * _tileMaps[0].stride;
-				_tileMaps[0].tiles[index] = Tile{ TileColor{ (u8) (16 + (rand() % 6)), 3 }, FlipRot::None, 1000 };
-			}
-		}
+		FillLayer( 0, randomSolidTile );
 
 		// Fill map layer 1 with randomness
-		for( int y = 0; y < _tileMaps[1].size.y; ++y )
-		{
-			for( int x = 0; x < _tileMaps[1].size.x; ++x )
-			{
-				const int index  = x + y * _tileMaps[1].stride;
-				const int tIndex = 832 + (rand() & 255);
-				_tileMaps[1].tiles[index] = Tile{ TileColor{ (u8) (27 + (rand() % 6)), 2 }, (FlipRot)(rand() % 9), (u16)tIndex };
-			}
-		}
+		FillLayer( 1, randomTile );
 
 		Point windowSize;
 		SDL_GetWindowSize( window(), &windowSize.x, &windowSize.y );
@@ -79,12 +90,98 @@ namespace JanSordid::SDL_Example
 		Base::Destroy();
 	}
 
+	template <typename TLambda>
+	void MapEditorState::FillLayer( const u8 layer, TLambda callback )
+	{
+		TileMap   & tileMap       = _tileMaps[layer];
+		const Point tileMapSize   = tileMap.size;
+		const int   tileMapStride = tileMap.stride;
+
+		for( int y = 0; y < tileMapSize.y; ++y )
+		{
+			for( int x = 0; x < tileMapSize.x; ++x )
+			{
+				const int index = x + y * tileMapStride;
+				tileMap.tiles[index] = callback( Point{ x, y }, tileMapSize );
+			}
+		}
+	}
+
+	void MapEditorState::FillLayer( const u8 layer, PerTileCallback callback )
+	{
+		TileMap   & tileMap       = _tileMaps[layer];
+		const Point tileMapSize   = tileMap.size;
+		const int   tileMapStride = tileMap.stride;
+
+		for( int y = 0; y < tileMapSize.y; ++y )
+		{
+			for( int x = 0; x < tileMapSize.x; ++x )
+			{
+				const int index = x + y * tileMapStride;
+				tileMap.tiles[index] = callback( Point{ x, y }, tileMapSize );
+			}
+		}
+	}
+
+	constexpr FlipRot toFlipRot( const u8 flip, const u8 rot )
+	{
+		FlipRot flipRot = FlipRot::None;
+		if( /*0 <= flip &&*/ flip <= 3 )
+		{
+			flipRot = flipRot
+				| ((flip & (1 << 0)) ? FlipRot::HorizontalFlip : FlipRot::None)
+				| ((flip & (1 << 1)) ? FlipRot::VerticalFlip   : FlipRot::None);
+		}
+		if( /*0 <= rot &&*/ rot <= 3 )
+		{
+			flipRot = flipRot
+				| ((rot & (1 << 0)) ? FlipRot::Rotate90 : FlipRot::None)
+				| ((rot & (1 << 1)) ? FlipRot::Rotate45 : FlipRot::None);
+		}
+		return flipRot;
+	}
+
+	void MapEditorState::SetTile( const u8 layer, const Point tileIndex, const u8 color, const u8 alpha, const FlipRot flipRot, const u16 paletteIndex )
+	{
+		assertCE( color <= 63 && "Color is only capable of storing 6 bits" );
+		assertCE( alpha <=  3 && "Alpha is only capable of storing 2 bits" );
+
+		TileMap & tileMap = _tileMaps[layer];
+		const u16 index1d = tileIndex.x + tileIndex.y * tileMap.size.x;
+		Tile    & modTile = tileMap.tiles[index1d];
+
+		modTile.color   = color;
+		modTile.alpha   = alpha;
+		modTile.flipRot = flipRot;
+		modTile.index1  = paletteIndex;
+	}
+
 	template <typename E>
 	void MapEditorState::HandleSpecificEvent( const E & ev )
 	{
 		// Not implemented by design
 		// Assert here to catch unhandled events
 		//assert( false );
+	}
+
+	template <>
+	void MapEditorState::HandleSpecificEvent( const SDL_KeyboardEvent & ev )
+	{
+		_isCtrlHeld = ev.mod & SDL_KMOD_CTRL;
+
+		if( !ev.down )
+			return;
+
+		switch( ev.key )
+		{
+			case SDLK_LEFT:  _selectedIndex--;                                break;
+			case SDLK_RIGHT: _selectedIndex++;                                break;
+			case SDLK_UP:    _selectedIndex-=_tileSet.tileCount.x;            break;
+			case SDLK_DOWN:  _selectedIndex+=_tileSet.tileCount.x;            break;
+			case SDLK_H:     _selectedFlip    ^= SDL_FLIP_HORIZONTAL;         break;
+			case SDLK_V:     _selectedFlip    ^= SDL_FLIP_VERTICAL;           break;
+			case SDLK_R:     _selectedRotation = (_selectedRotation + 1) % 4; break;
+		}
 	}
 
 	template <>
@@ -107,40 +204,12 @@ namespace JanSordid::SDL_Example
 		else if ( _buttonHeld == 2 )
 		{
 			// Map
-			FPoint pos     = FPoint{ ev.x, ev.y } - _viewOffset;
+			FPoint pos     = FPoint{ ev.x, ev.y } - _viewOffset * _tileMaps[1].scrollScale;
 			Point  index2d = toI( pos ) / toI( toF( _tileSet.tileSize ) * _viewScale );
-			u16    index1d = index2d.x + index2d.y * _tileMaps[1].size.x;
 			print( "pos:   {} {}\n", pos.x, pos.y );
 			print( "index: {} {}\n", index2d.x, index2d.y );
-			print( "index: {}\n", index1d );
 
-			const bool isTransparent = _selectedAlpha == 0;
-			Tile &     modTile       = _tileMaps[1].tiles[index1d];
-
-			if( isTransparent )
-				modTile.index( 0 );
-			else if( 0 <= _selectedIndex )
-				modTile.index( _selectedIndex );
-
-			if( 0 <= _selectedColor && _selectedColor <= 63 )
-				modTile.color = _selectedColor;
-			if( 1 <= _selectedAlpha && _selectedAlpha <= 4 )
-				modTile.alpha = _selectedAlpha - 1;
-
-			FlipRot flipRot = FlipRot::None;
-			if( 0 <= _selectedRotation && _selectedRotation <= 3 )
-			{
-				flipRot = flipRot
-				        | ((_selectedRotation & (1 << 0)) ? FlipRot::Rotate90 : FlipRot::None)
-				        | ((_selectedRotation & (1 << 1)) ? FlipRot::Rotate45 : FlipRot::None);
-			}
-			if( 0 <= _selectedFlip && _selectedFlip <= 3 )
-			{
-				flipRot = flipRot
-				        | ((_selectedFlip & (1 << 0)) ? FlipRot::HorizontalFlip : FlipRot::None)
-				        | ((_selectedFlip & (1 << 1)) ? FlipRot::VerticalFlip   : FlipRot::None);
-			}
-			modTile.flipRot = flipRot;
+			SetTile( _selectedLayer, index2d, _selectedColor, _selectedAlpha, toFlipRot( _selectedFlip, _selectedRotation ), _selectedIndex );
 		}
 	}
 
@@ -160,12 +229,12 @@ namespace JanSordid::SDL_Example
 
 			if( ev.x >= xDivider )
 			{
-				const FPoint paletteTileSize = toF( _tileSet.tileSize ) * _paletteScale;
+				// Right: Palette side
 
-				// Palette side
+				const FPoint paletteTileSize = toF( _tileSet.tileSize ) * _paletteScale;
 				if( ev.y > 128 )
 				{
-					// Palette
+					// Down: Palette
 					_buttonHeld = 1;
 
 					FPoint pos     = FPoint { ev.x, ev.y } - _paletteOffset;
@@ -178,7 +247,7 @@ namespace JanSordid::SDL_Example
 				}
 				else
 				{
-					// Modifiers
+					// Up: Modifiers
 					_buttonHeld = 0; // can not hold
 
 					const f32    spacing   = 2.f;
@@ -187,10 +256,10 @@ namespace JanSordid::SDL_Example
 				//	const Point sel      = { x, y };
 				//	const FRect dst      = toF( sel ) * paletteTileSize * spacing + toF( modOffset ) + toWH( paletteTileSize );
 
-					FPoint pos       = FPoint { ev.x, ev.y } - modOffset;
-					Point  index2d   = toI( pos ) / toI( paletteTileSize * spacing );
-					u16    index1d   = index2d.x + index2d.y * 8;
-					_selectedFlip     = (index2d.x & 3);
+					FPoint pos        = FPoint { ev.x, ev.y } - modOffset;
+					Point  index2d    = toI( pos ) / toI( paletteTileSize * spacing );
+					u16    index1d    = index2d.x + index2d.y * 8;
+					_selectedFlip     = (index2d.x & 0b11);
 					_selectedRotation = ((index2d.x & 4) != 0) + index2d.y * 2;
 					print( "pos:   {} {}\n", pos.x, pos.y );
 					print( "index: {} {}\n", index2d.x, index2d.y );
@@ -200,43 +269,22 @@ namespace JanSordid::SDL_Example
 			}
 			else
 			{
-				// Map
+				// Left: Map
 				_buttonHeld = 2;
 
-				FPoint pos     = FPoint{ ev.x, ev.y } - _viewOffset;
-				Point  index2d = toI( pos ) / toI( toF( _tileSet.tileSize ) * _viewScale );
-				u16    index1d = index2d.x + index2d.y * _tileMaps[1].size.x;
+				FPoint pos = FPoint{ev.x, ev.y} - _viewOffset * _tileMaps[1].scrollScale;
+				Point index2d = toI( pos ) / toI( toF( _tileSet.tileSize ) * _viewScale );
 				print( "pos:   {} {}\n", pos.x, pos.y );
 				print( "index: {} {}\n", index2d.x, index2d.y );
-				print( "index: {}\n", index1d );
 
-				const bool isTransparent = _selectedAlpha == 0;
-				Tile &     modTile       = _tileMaps[1].tiles[index1d];
-
-				if( isTransparent )
-					modTile.index( 0 );
-				else if( 0 <= _selectedIndex )
-					modTile.index( _selectedIndex );
-
-				if( 0 <= _selectedColor && _selectedColor <= 63 )
-					modTile.color = _selectedColor;
-				if( 1 <= _selectedAlpha && _selectedAlpha <= 4 )
-					modTile.alpha = _selectedAlpha - 1;
-
-				FlipRot flipRot = FlipRot::None;
-				if( 0 <= _selectedRotation && _selectedRotation <= 3 )
+				if( _isCtrlHeld )
 				{
-					flipRot = flipRot
-					        | ((_selectedRotation & (1 << 0)) ? FlipRot::Rotate90 : FlipRot::None)
-					        | ((_selectedRotation & (1 << 1)) ? FlipRot::Rotate45 : FlipRot::None);
+					//PickTile( _selectedLayer, index2d, _selectedColor, _selectedAlpha, toFlipRot( _selectedFlip, _selectedRotation ), _selectedIndex );
 				}
-				if( 0 <= _selectedFlip && _selectedFlip <= 3 )
+				else
 				{
-					flipRot = flipRot
-					        | ((_selectedFlip & (1 << 0)) ? FlipRot::HorizontalFlip : FlipRot::None)
-					        | ((_selectedFlip & (1 << 1)) ? FlipRot::VerticalFlip   : FlipRot::None);
+					SetTile( _selectedLayer, index2d, _selectedColor, _selectedAlpha, toFlipRot( _selectedFlip, _selectedRotation ), _selectedIndex );
 				}
-				modTile.flipRot = flipRot;
 			}
 		}
 	}
@@ -250,8 +298,8 @@ namespace JanSordid::SDL_Example
 		const Keymod keyMod    = SDL_GetModState();
 		const bool   isModded  = keyMod & SDL_KMOD_SHIFT;
 		const bool   isFlipped = ev.direction == SDL_MouseWheelDirection::SDL_MOUSEWHEEL_FLIPPED;
-		const int    flipFactor= isFlipped ? -1 : 1;
-		const f32    xDivider  = (windowSize.x - 512);
+		const f32    flipFactor= isFlipped ? -1 : 1;
+		const f32    xDivider  = (f32)(windowSize.x - 512);
 		const FPoint scroll    = isModded ? FPoint { ev.y * flipFactor, -ev.x } : FPoint { -ev.x, ev.y * flipFactor };
 
 		if( ev.mouse_x >= xDivider )
@@ -271,81 +319,266 @@ namespace JanSordid::SDL_Example
 		}
 	}
 
-	bool MapEditorState::HandleEvent( const Event & ev )
+	bool MapEditorState::Input( const Event & ev )
 	{
 		switch( ev.type )
 		{
 			case SDL_EVENT_KEY_DOWN:
 			case SDL_EVENT_KEY_UP:
-				MapEditorState::HandleSpecificEvent( ev.key );
+				HandleSpecificEvent( ev.key );
 				break;
 
 			case SDL_EVENT_MOUSE_MOTION:
-				MapEditorState::HandleSpecificEvent( ev.motion );
+				HandleSpecificEvent( ev.motion );
 				break;
 
 			case SDL_EVENT_MOUSE_BUTTON_UP:
 			case SDL_EVENT_MOUSE_BUTTON_DOWN:
-				MapEditorState::HandleSpecificEvent( ev.button );
+				HandleSpecificEvent( ev.button );
 				break;
 
 			case SDL_EVENT_MOUSE_WHEEL:
-				MapEditorState::HandleSpecificEvent( ev.wheel );
+				HandleSpecificEvent( ev.wheel );
 				break;
 
 			case SDL_EVENT_GAMEPAD_AXIS_MOTION:
-				MapEditorState::HandleSpecificEvent( ev.gaxis );
+				HandleSpecificEvent( ev.gaxis );
 				break;
 
 			case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
 			case SDL_EVENT_GAMEPAD_BUTTON_UP:
-				MapEditorState::HandleSpecificEvent( ev.gbutton );
+				HandleSpecificEvent( ev.gbutton );
 				break;
 		}
 
 		return true; // Not really correct
 	}
 
-	void MapEditorState::Update( const u64 frame, const u64 totalMSec, const float deltaT )
+	void MapEditorState::Update( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaT )
 	{}
+
+	void MapEditorState::Render( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaTNeeded )
+	{
+		Point windowSize;
+		SDL_GetWindowSize( window(), &windowSize.x, &windowSize.y );
+
+		const Rect  mapClipRect  = { 0, 0, windowSize.x - 512, windowSize.y };
+		const FRect mapClipRectF = toF( mapClipRect );
+		SDL_SetRenderClipRect( renderer(), &mapClipRect );
+
+		const u8     randColor        = (9 + (rand() % 55));
+		const FRect  selectorOverhang = FRect{ -8, -8, 32, 32 } * toXYWH( _paletteScale );
+		const Tile   selectorTile     = Tile{ TileColor { randColor, 3 }, FlipRot::None,  827 };
+		const Tile   sentinelTile     = Tile{ TileColor { 9,         3 }, FlipRot::None, 1000 };
+		const Tile * lastTile         = &sentinelTile;
+
+		// Reset Color- and Alpha-Mod according to the sentinel Tile
+		SDL_SetTextureColorMod( _tileSet.texture, 255, 255, 255 );
+		SDL_SetTextureAlphaMod( _tileSet.texture, SDL_ALPHA_OPAQUE );
+
+		// Draw Map
+		//int drawTileCalls = 0;
+		for( int l = 0; l < 2; ++l )
+		{
+			const TileMap & tileMap = _tileMaps[l];
+
+			SDL_SetTextureBlendMode( _tileSet.texture, tileMap.blendMode );
+			SDL_SetTextureScaleMode( _tileSet.texture, tileMap.scaleMode );
+
+			//const Point  viewSize     = { 640, 480 };
+			//const Point  startIndex   = toI( _viewOffset / tileMap.tileDist );
+
+			const FPoint size        = toF( tileMap.tileSet->tileSize ) *  tileMap.sizeScale;
+			const FPoint distScale   = tileMap.tileDist * tileMap.sizeScale;
+			const FRect  sizedOffset = toFRect( _viewOffset * tileMap.scrollScale, size );
+			for( int y = 0; y < tileMap.size.y; ++y )
+			{
+				for( int x = 0; x < tileMap.size.x; ++x )
+				{
+					const FPoint pos      = FPoint{ (f32)x, (f32)y } * distScale;
+					const FRect  dst      = pos + sizedOffset;
+//					const FRect  dst      = toXY( pt, 1 ) * toXYWH( toF( tileMap.tileSet->tileSize ) * viewScale ) + toF( viewOffset );
+
+					// TODO: It would be better to have the start and end indexes of the x and y loops do the culling already
+					if( dst.x + dst.w < 0
+						|| dst.y + dst.h < 0
+						|| dst.x > mapClipRectF.w
+						|| dst.y > mapClipRectF.h )
+						continue;
+
+					const int    index    = x + y * tileMap.stride;
+					const Tile * currTile = &tileMap.tiles[index];
+					if( currTile->index() != 0 )
+					{
+						DrawTile( renderer(), _tileSet.texture, *currTile, *lastTile, dst, tileMap.center );
+						lastTile = currTile;
+						//drawTileCalls++;
+					}
+				}
+			}
+		}
+
+		//IfDebug print( "drawtile calls: {}\n", drawTileCalls );
+
+		const FPoint paletteTileSize = toF( _tileSet.tileSize ) * _paletteScale;
+
+		// Draw selected colored Tile with all possible Modifiers (Flip, Rotate)
+		{
+			// unlock clipping
+			SDL_SetRenderClipRect( renderer(), nullptr );
+
+			SDL_SetTextureColorMod( _tileSet.texture, 255, 255, 255 );
+			SDL_SetTextureAlphaMod( _tileSet.texture, SDL_ALPHA_OPAQUE );
+
+			const float  spacing   = 2.f;
+			const Point  modOffset = { windowSize.x - 512 + 16, 16 };
+
+			if( _selectedIndex != 0 )
+			{
+				const Color color    = HSNR64::Palette( _selectedColor );
+				//const bool  isBright = color.r > 160 || color.g > 140 || color.b > 180;
+				//if(!isBright)
+				{
+					const Color compColor = { (u8)(color.r ^ 0x80), (u8)(color.g ^ 0x80), (u8)(color.b ^ 0x80), SDL_ALPHA_OPAQUE };
+					const FRect dst = toF( modOffset ) + FRect { -16, -16, 512, 128 };
+					SDL_SetRenderDrawColor( renderer(), compColor.r, compColor.g, compColor.b, compColor.a );
+					//SDL_SetRenderDrawColor( renderer(), 180, 180, 180, SDL_ALPHA_OPAQUE );
+					SDL_RenderFillRect( renderer(), &dst );
+				}
+
+				for( int y = 0; y <= 1; ++y )
+				{
+					for( int x = 0; x <= 7; ++x )
+					{
+						const Point   sel      = { x, y };
+						const FRect   dst      = toF( sel ) * paletteTileSize * spacing + toF( modOffset ) + toWH( paletteTileSize );
+						const FlipRot flipRot  = FlipRot::None
+						                       | (((x & 1) != 0) ? HSNR64::FlipRot::HorizontalFlip : HSNR64::FlipRot::None)
+						                       | (((x & 2) != 0) ? HSNR64::FlipRot::VerticalFlip   : HSNR64::FlipRot::None)
+						                       | (((x & 4) != 0) ? HSNR64::FlipRot::Rotate90       : HSNR64::FlipRot::None)
+						                       | ((y != 0)       ? HSNR64::FlipRot::Rotate45       : HSNR64::FlipRot::None);
+						const Tile    currTile = Tile { TileColor{ (u8)_selectedColor, 3 }, flipRot, (u16)_selectedIndex };
+						// Draw Cursor
+						DrawTile( renderer(), _tileSet.texture, currTile, sentinelTile, dst, paletteTileSize * 0.5f );
+					}
+				}
+			}
+
+			_tileMaps[1].center = toF( _tileMaps[1].tileSet->tileSize ) * _tileMaps[1].sizeScale * _tileMaps[1].halfSize;
+
+			_selectedMod         = _selectedFlip | _selectedRotation << 2;
+			constexpr int stride = 8;
+			const Point   sel    = { _selectedMod % stride, _selectedMod / stride };
+			const FRect   dst    = toF( sel * _tileSet.tileSize ) * _paletteScale * spacing + toF( modOffset ) + selectorOverhang;
+
+			// Draw Mod Cursor
+			DrawTile( renderer(), _tileSet.texture, selectorTile, sentinelTile, dst, {} );
+		}
+
+		// Draw Tile-Palette
+		{
+			SDL_SetTextureColorMod( _tileSet.texture, 255, 255, 255 );
+			SDL_SetTextureAlphaMod( _tileSet.texture, SDL_ALPHA_OPAQUE );
+
+			const Rect  clipRect = { windowSize.x - 512, 128, 512, windowSize.y };
+			SDL_SetRenderClipRect( renderer(), &clipRect );
+
+			const FRect palSrc = { 0, 0, (f32)_tileSet.textureSize.x, (f32)_tileSet.textureSize.y };
+			const FRect palDst = toFRect( _paletteOffset, toF( _tileSet.textureSize ) * _paletteScale );
+
+			// Draw the Palette (the whole TileSet)
+			SDL_RenderTexture( renderer(), _tileSet.texture, &palSrc, &palDst );
+
+			const int   stride   = _tileSet.tileCount.x;
+			const Point sel      = { _selectedIndex % stride, _selectedIndex / stride };
+			//const FRect overhang = FRect{ -8, -8, 32, 32 } * toXYWH( _paletteScale );
+			const FRect dst      = toF( sel ) * paletteTileSize + _paletteOffset + selectorOverhang;
+
+			const Rect clipRect2 = {
+				(windowSize.x - 512) + (int)selectorOverhang.x,
+				128 + (int)selectorOverhang.y,
+				512 - (int)selectorOverhang.x,
+				windowSize.y };
+			SDL_SetRenderClipRect( renderer(), &clipRect2 );
+
+			// Draw Palette Cursor
+			DrawTile( renderer(), _tileSet.texture, selectorTile, sentinelTile, dst, {} );
+		}
+
+		// unlock clipping
+		SDL_SetRenderClipRect( renderer(), nullptr );
+
+		if(false)
+		{
+			const FRect
+				src = { 16 * 16, 39 * 16, 3 * 16, 3 * 16 },
+				dst = { 100, 100, 400, 400 };
+			SDL_RenderTexture9Grid( renderer(), _tileSet.texture, &src, 16, 16, 16, 16, 4, &dst );
+		}
+	}
 
 #ifdef IMGUI
 
-	void MapEditorState::RenderUI( const u64 framesSinceStart, const u64 msSinceStart, const float deltaTNeeded )
+	void MapEditorState::RenderUI( const u64 framesSinceStart, const Duration timeSinceStart, const float deltaTNeeded )
 	{
-		static bool auto_update = false;
+		static bool autoUpdate = false;
 		static bool drawColorNumber = false;
+
 		//ImGuiIO & io = ImGui::GetIO();
 		ImGui::Begin( "MapEditor", nullptr, ImGuiWindowFlags_NoFocusOnAppearing );
 		if( framesSinceStart == 0 )
 			ImGui::SetWindowFocus( nullptr );
 
+		const u8     randColor        = (10 + (rand() % 36));
+
 		//if( ImGui::SliderInt( "int", &p.x, 0, 320 ) && auto_update )
 			//_blendedText = nullptr;
 		//	nullptr;
 
-		ImGui::Checkbox( "Auto-Redraw", &auto_update );     // Edit bools storing our window open/close state
+		ImGui::Checkbox( "Auto-Redraw", &autoUpdate );     // Edit bools storing our window open/close state
 
 		if( ImGui::Button( "Save" ) )                     // Buttons return true when clicked (most widgets return true when edited/activated)
 			SaveMap();
 
 		ImGui::SliderFloat2( "Blah", (float*)(void*)&_viewScale, 0.1, 8.0 );
 
-		if( ImGui::SliderInt( "Layer", &_selectedLayer, 0, 4 ) )
-		{ }
+		if( ImGui::SliderInt( "Layer", &_selectedLayer, 0, 4 ) ) { }
 
-		if( ImGui::SliderInt( "Color", &_selectedColor, -1, 63 ) )
-		{ }
+		if( ImGui::SliderInt( "Color", &_selectedColor, -1, 63 ) ) { }
 
 		//ImGui::Checkbox( "Keep Alpha", &isKeepAlpha );
-		if( ImGui::SliderInt( "Alpha", &_selectedAlpha, -1, 4 ) )
-		{ }
+		if( ImGui::SliderInt( "Alpha", &_selectedAlpha, -1, 3 ) ) { }
 
-		if( ImGui::SliderInt( "Flip", &_selectedFlip, -1, 3 ) )
-		{ }
+		if( ImGui::SliderInt( "Flip", &_selectedFlip, -1, 3 ) ) { }
 
-		if( ImGui::SliderInt( "Rotation", &_selectedRotation, -1, 3 ) )
-		{ }
+		if( ImGui::SliderInt( "Rotation", &_selectedRotation, -1, 3 ) ) { }
+
+		if( ImGui::Button( "Clear" ) )
+		{
+			FillLayer( _selectedLayer, emptyTile );
+		}
+
+		ImGui::SameLine();
+		if( ImGui::Button( "Reset Layer to uniform" ) )
+		{
+			const TileColor color = { (u8)_selectedColor, (u8)(_selectedAlpha) };
+			FillLayer( _selectedLayer, uniformTile( color, FlipRot::None, 1000 ) );
+		}
+
+		ImGui::SameLine();
+		if( ImGui::Button( "... random Color" ) )
+		{
+			FillLayer( _selectedLayer, randomSolidTile );
+			SDL_SetCursor( SDL_CreateSystemCursor( SDL_SYSTEM_CURSOR_MOVE ) );
+		}
+
+		ImGui::SameLine();
+		if( ImGui::Button( "... & Index" ) )
+		{
+			FillLayer( _selectedLayer, randomTile );
+			SDL_SetCursor( SDL_CreateSystemCursor( SDL_SYSTEM_CURSOR_CROSSHAIR ) );
+		}
+
 
 		ImGui::Checkbox( "Draw Color Number", &drawColorNumber );
 
@@ -361,31 +594,27 @@ namespace JanSordid::SDL_Example
 			: withoutNumber;
 		for( int i = 0; i < 64; ++i )
 		{
+			//ImU32 rcol = std::bit_cast<ImU32>( HSNR64::Palette( randColor ) );
 			ImU32 pcol = std::bit_cast<ImU32>( HSNR64::Palette( i ) );
+			ImU32 bcol = std::bit_cast<ImU32>( HSNR64::Palette( _selectedColor == i ? randColor : i ) );
 			//Color color = hsnr64::Palette[i];
-			ImGui::PushStyleColor( ImGuiCol_Button, pcol );
-			ImGui::PushStyleColor( ImGuiCol_Text, pcol ^ 0x00808080 );
+			ImGui::PushStyleColor( ImGuiCol_Button,       pcol );
+			ImGui::PushStyleColor( ImGuiCol_Border,       bcol );
+			ImGui::PushStyleColor( ImGuiCol_BorderShadow, bcol );
+			ImGui::PushStyleColor( ImGuiCol_Text,         pcol ^ 0x00808080 );
 			if( ImGui::Button( format( fmt::runtime( fmt ), i ).c_str() ) )
 				_selectedColor = i;
-			ImGui::PopStyleColor( 2 );
+			ImGui::PopStyleColor( 4 );
 			//ImGui::ColorButton( format( "color{}", i ).c_str(), *((ImVec4*)&sor::hsnr64::Palette[i]), ImGuiColorEditFlags_Uint8 );
 			//if(i%10 != 0)
-			if( true
-			    //&& i != 0
-			    && i != 10
-			    //&& i != 17
-			    && i != 25
-			    //&& i != 32
-			    && i != 40
-			    //&& i != 48
-			    //&& i != 57
-			    && i != 52
-				)
+			if( !ColorNeedsLinebreak( i ) )
 				ImGui::SameLine();
 		}
 		ImGui::PopStyleColor();
 		ImGui::PopStyleVar();
 		ImGui::PopID();
+
+		ImGui::NewLine();
 
 		ImGui::End();
 	}
@@ -425,8 +654,8 @@ namespace JanSordid::SDL_Example
 				tileMap.size.y,
 				nullptr );
 
-			const Point  viewSize     = { 640, 480 };
-			const Point  startIndex   = toI( _viewOffset / tileMap.tileDist );
+			//const Point  viewSize     = { 640, 480 };
+			//const Point  startIndex   = toI( _viewOffset / tileMap.tileDist );
 
 			print( file, " [" );
 			for( int y = 0; y < tileMap.size.y; ++y )
@@ -466,143 +695,4 @@ namespace JanSordid::SDL_Example
 		std::fclose( file );
 	}
 
-	void MapEditorState::Render( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaTNeeded )
-	{
-		Point windowSize;
-		SDL_GetWindowSize( window(), &windowSize.x, &windowSize.y );
-
-		{
-			const Rect clipRect = { 0, 0, windowSize.x - 512, windowSize.y };
-			SDL_SetRenderClipRect( renderer(), &clipRect );
-		}
-
-		const u8     randColor        = (9 + (rand() % 55));
-		const FRect  selectorOverhang = FRect{ -8, -8, 32, 32 } * toXYWH( _paletteScale );
-		const Tile   selectorTile     = Tile{ TileColor { randColor, 3 }, FlipRot::None,  827 };
-		const Tile   sentinelTile     = Tile{ TileColor { 9,         3 }, FlipRot::None, 1000 };
-		const Tile * lastTile         = &sentinelTile;
-
-		// Reset Color- and Alpha-Mod according to the sentinel Tile
-		SDL_SetTextureColorMod( _tileSet.texture, 255, 255, 255 );
-		SDL_SetTextureAlphaMod( _tileSet.texture, SDL_ALPHA_OPAQUE );
-
-		// Draw Map
-		for( int l = 0; l < 2; ++l )
-		{
-			const TileMap & tileMap = _tileMaps[l];
-
-			SDL_SetTextureBlendMode( _tileSet.texture, tileMap.blendMode );
-			SDL_SetTextureScaleMode( _tileSet.texture, tileMap.scaleMode );
-
-			const Point  viewSize     = { 640, 480 };
-			const Point  startIndex   = toI( _viewOffset / tileMap.tileDist );
-
-			for( int y = 0; y < tileMap.size.y; ++y )
-			{
-				for( int x = 0; x < tileMap.size.x; ++x )
-				{
-					const FPoint pt       = { (f32)x, (f32)y };
-					const FPoint pos      = pt * tileMap.tileDist * tileMap.sizeScale;
-					const FPoint size     = toF( tileMap.tileSet->tileSize ) *  tileMap.sizeScale;
-					const FRect  dst      = pos + toWH( size ) + _viewOffset;
-	//				const FRect  dst      = toXY( pt, 1 ) * toXYWH( toF( tileMap.tileSet->tileSize ) * viewScale ) + toF( viewOffset );
-					const int    index    = x + y * tileMap.stride;
-					const Tile * currTile = &tileMap.tiles[index];
-					if( currTile->index() != 0 )
-					{
-						DrawTile( renderer(), _tileSet.texture, *currTile, *lastTile, dst, tileMap.center );
-						lastTile = currTile;
-					}
-				}
-			}
-		}
-
-		const FPoint paletteTileSize = toF( _tileSet.tileSize ) * _paletteScale;
-
-		// Draw selected colored Tile with all possible Modifiers (Flip, Rotate)
-		{
-			// unlock clipping
-			SDL_SetRenderClipRect( renderer(), nullptr );
-
-			SDL_SetTextureColorMod( _tileSet.texture, 255, 255, 255 );
-			SDL_SetTextureAlphaMod( _tileSet.texture, SDL_ALPHA_OPAQUE );
-
-			const float  spacing   = 2.f;
-			const Point  modOffset = { windowSize.x - 512 + 16, 16 };
-
-			if( _selectedIndex != 0 )
-			{
-				const Color color    = HSNR64::Palette( _selectedColor );
-				const bool  isBright = color.r > 160 || color.g > 140 || color.b > 180;
-				//if(!isBright)
-				{
-					const Color compColor = { (u8)(color.r ^ 0x80), (u8)(color.g ^ 0x80), (u8)(color.b ^ 0x80), SDL_ALPHA_OPAQUE };
-					const FRect dst = toF( modOffset ) + FRect { -16, -16, 512, 128 };
-					SDL_SetRenderDrawColor( renderer(), compColor.r, compColor.g, compColor.b, compColor.a );
-					//SDL_SetRenderDrawColor( renderer(), 180, 180, 180, SDL_ALPHA_OPAQUE );
-					SDL_RenderFillRect( renderer(), &dst );
-				}
-
-				for( int y = 0; y <= 1; ++y )
-				{
-					for( int x = 0; x <= 7; ++x )
-					{
-						const Point sel      = { x, y };
-						const FRect dst      = toF( sel ) * paletteTileSize * spacing + toF( modOffset ) + toWH( paletteTileSize );
-						const FlipRot flipRot = FlipRot::None
-							| (((x & 1) != 0) ? HSNR64::FlipRot::VerticalFlip   : HSNR64::FlipRot::None)
-							| (((x & 2) != 0) ? HSNR64::FlipRot::HorizontalFlip : HSNR64::FlipRot::None)
-							| (((x & 4) != 0) ? HSNR64::FlipRot::Rotate90       : HSNR64::FlipRot::None)
-							| ((y != 0)       ? HSNR64::FlipRot::Rotate45       : HSNR64::FlipRot::None);
-						const Tile  currTile = Tile { TileColor{ (u8)_selectedColor, 3 }, flipRot, (u16)_selectedIndex };
-						// Draw Cursor
-						DrawTile( renderer(), _tileSet.texture, currTile, sentinelTile, dst, paletteTileSize * 0.5f );
-					}
-				}
-			}
-
-			_tileMaps[1].center = toF( _tileMaps[1].tileSet->tileSize ) * _tileMaps[1].sizeScale * _tileMaps[1].halfSize;
-
-			_selectedMod = _selectedFlip | _selectedRotation << 2;
-			const int   stride = 8;
-			const Point sel    = {_selectedMod % stride, _selectedMod / stride };
-			const FRect dst    = toF( sel * _tileSet.tileSize ) * _paletteScale * spacing + toF( modOffset ) + selectorOverhang;
-
-			// Draw Mod Cursor
-			DrawTile( renderer(), _tileSet.texture, selectorTile, sentinelTile, dst, {} );
-		}
-
-		// Draw Palette
-		{
-			SDL_SetTextureColorMod( _tileSet.texture, 255, 255, 255 );
-			SDL_SetTextureAlphaMod( _tileSet.texture, SDL_ALPHA_OPAQUE );
-
-			const Rect  clipRect = { windowSize.x - 512, 128, 512, windowSize.y };
-			SDL_SetRenderClipRect( renderer(), &clipRect );
-
-			const FRect palSrc = { 0, 0, (f32)_tileSet.textureSize.x, (f32)_tileSet.textureSize.y };
-			const FRect palDst = {
-				(f32) _paletteOffset.x,
-				(f32) _paletteOffset.y,
-				(f32) _tileSet.textureSize.x * _paletteScale.x,
-				(f32) _tileSet.textureSize.y * _paletteScale.y };
-
-			// Draw the Palette (the whole TileSet)
-			SDL_RenderTexture( renderer(), _tileSet.texture, &palSrc, &palDst );
-
-			const int   stride   = _tileSet.tileCount.x;
-			const Point sel      = { _selectedIndex % stride, _selectedIndex / stride };
-			const FRect overhang = FRect{ -8, -8, 32, 32 } * toXYWH( _paletteScale );
-			const FRect dst      = toF( sel ) * paletteTileSize + _paletteOffset + selectorOverhang;
-
-			const Rect clipRect2 = { (windowSize.x - 512) + (int)selectorOverhang.x, 128 + (int)selectorOverhang.y, 512 - (int)selectorOverhang.x, windowSize.y };
-			SDL_SetRenderClipRect( renderer(), &clipRect2 );
-
-			// Draw Palette Cursor
-			DrawTile( renderer(), _tileSet.texture, selectorTile, sentinelTile, dst, {} );
-		}
-
-		// unlock clipping
-		SDL_SetRenderClipRect( renderer(), nullptr );
-	}
 }

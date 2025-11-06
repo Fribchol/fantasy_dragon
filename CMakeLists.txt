@@ -20,6 +20,7 @@ option( USE_DeployBinary    "Deploy the binary in the base directory"    OFF )  
 option( USE_FMT_HeaderOnly  "Use header-only implementation of FMT"      ON  )
 option( USE_NFD_Native      "Use native encoding instead of UTF8 in NFD" OFF )
 
+option( USE_TGUI            "Use Texus' GUI"          ON          )   # Simple Embedding GUI Framework
 option( USE_ImGui           "Use Dear ImGui"          ${IS_DEBUG} )   # Can be manually enabled on Optimized and Final builds
 option( USE_ImGuiFreetype   "Use Dear ImGui Freetype" OFF         )   # Usage of Freetype in ImGui
 option( USE_OpenMP          "Use OpenMP"              ON          )   # No-brain SIMD and MP
@@ -49,8 +50,12 @@ find_package( nfd           CONFIG REQUIRED )
 find_package( benchmark     CONFIG REQUIRED )
 find_package( Eigen3        CONFIG REQUIRED )
 find_package( nlohmann_json CONFIG REQUIRED )
+if( USE_TGUI )
+    find_package( TGUI      CONFIG REQUIRED )
+endif()
 if( USE_ImGui )
     find_package( imgui     CONFIG REQUIRED )
+    find_package( implot    CONFIG REQUIRED )
 endif()
 if( USE_OpenMP )
     find_package( OpenMP           REQUIRED )
@@ -69,6 +74,9 @@ add_compile_definitions(
         $<$<CONFIG:DEBUG>:_DEBUG>               # not DEBUG because of a stupid old define
         $<$<CONFIG:RELWITHDEBINFO>:OPTIMIZED>
         $<$<CONFIG:RELEASE>:FINAL> )
+
+# SDL OLD NAMES
+#add_compile_definitions( SDL_DISABLE_OLD_NAMES )
 
 if( USE_DeployBinary )
     add_compile_definitions( DEPLOY_BINARY  )
@@ -117,6 +125,7 @@ add_compile_options(
         ## Soften up some general rules which are too harsh, with no-* options
         -Wno-unused-parameter                                                       # Base class functions can have plenty of unused parameters
         $<$<COMPILE_LANGUAGE:CXX>:$<$<CXX_COMPILER_ID:Clang>:-Wno-c++98-compat>>    # Do not strive for prehistoric compatibility
+        $<$<COMPILE_LANGUAGE:CXX>:$<$<CXX_COMPILER_ID:GNU>:-Wno-volatile>>          # Senseless C++20 deprecation that has been de-deprecated for C++23, works in GCC 11 but not Clang 15
 
         $<$<COMPILE_LANGUAGE:CXX>:-Werror=deprecated-copy>
         $<$<COMPILE_LANGUAGE:CXX>:-Werror=deprecated-copy-dtor>
@@ -127,8 +136,6 @@ add_compile_options(
         $<$<CXX_COMPILER_ID:GNU>:-Werror=shadow=local>
         $<$<CXX_COMPILER_ID:Clang>:-Wshadow-all>
         $<$<CXX_COMPILER_ID:Clang>:-Werror=shadow>
-
-        $<$<COMPILE_LANGUAGE:CXX>:$<$<CXX_COMPILER_ID:GNU>:-Wno-volatile>>      # Senseless C++20 deprecation that has been de-deprecated for C++23, works in GCC 11 but not Clang 15
 
         $<$<COMPILE_LANGUAGE:CXX>:-Wdelete-non-virtual-dtor>
         $<$<COMPILE_LANGUAGE:CXX>:$<$<CXX_COMPILER_ID:Clang>:-Wdeprecated-dynamic-exception-spec>>
@@ -239,6 +246,7 @@ target_link_libraries(      sor-mini PUBLIC
         #$<IF:$<TARGET_EXISTS:SDL2_net::SDL2_net>,       SDL2_net::SDL2_net,     SDL2_net::SDL2_net-static>
 
         $<TARGET_NAME_IF_EXISTS:imgui::imgui>
+        $<TARGET_NAME_IF_EXISTS:implot::implot>
 )
 
 
@@ -248,6 +256,7 @@ add_executable( sor-example
         src/sor/sdl_game.cpp
 
         src/hsnr64/tilefont.cpp
+        src/hsnr64/tiles.cpp
 
         src/example/game/example_game.cpp
 
@@ -259,6 +268,7 @@ add_executable( sor-example
         src/example/game/simpleeditor.cpp
         src/example/game/roflstate.cpp
         src/example/game/mapeditor.cpp
+        src/example/game/tgui.cpp
 )
 target_include_directories( sor-example PUBLIC src/ )
 target_link_libraries(      sor-example PUBLIC
@@ -279,7 +289,12 @@ target_link_libraries(      sor-example PUBLIC
         $<IF:$<TARGET_EXISTS:SDL3_mixer::SDL3_mixer>,   SDL3_mixer::SDL3_mixer, SDL3_mixer::SDL3_mixer-static>
         #$<IF:$<TARGET_EXISTS:SDL2_net::SDL2_net>,       SDL2_net::SDL2_net,     SDL2_net::SDL2_net-static>
 
+        $<TARGET_NAME_IF_EXISTS:Eigen3::Eigen>
+
+        $<TARGET_NAME_IF_EXISTS:TGUI::TGUI>
+
         $<TARGET_NAME_IF_EXISTS:imgui::imgui>
+        $<TARGET_NAME_IF_EXISTS:implot::implot>
 
     PRIVATE
         $<TARGET_NAME_IF_EXISTS:nlohmann_json::nlohmann_json>

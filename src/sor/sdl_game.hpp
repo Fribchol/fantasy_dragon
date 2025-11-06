@@ -51,14 +51,14 @@ namespace JanSordid::SDL
 		// Do only `return true` in overloads if ALL inputs are handled,
 		// Care: `return true` here would skip the whole `while(SDL_PollEvent())` loop
 		//  and all calls to Game::HandleEvent and GameState::HandleEvent
-		virtual constexpr bool Input() { return false; }
+		virtual constexpr bool StatefulInput() { return false; }
 
 		// Returns a bool to know if the Event was handled, maybe useful in the future if GameStates could be stacked (not possible yet)
-		virtual bool HandleEvent( const Event & event ) = 0;
-		virtual void Update( u64 framesSinceStart, u64 msSinceStart, f32 deltaT       ) = 0;
-		virtual void Render( u64 framesSinceStart, u64 msSinceStart, f32 deltaTNeeded ) = 0;
+		virtual bool Input( const Event & event ) = 0;
+		virtual void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT       ) = 0;
+		virtual void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) = 0;
 		ImGuiOnly(
-			virtual void RenderUI( u64 framesSinceStart, u64 msSinceStart, f32 deltaTNeeded ) {})
+			virtual void RenderUI( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) {})
 	};
 
 	// abstract
@@ -78,13 +78,22 @@ namespace JanSordid::SDL
 		        ~GameState()               noexcept override = default;
 
 		/// Getters & Setters: non-virtual first, followed by (pure) virtual/override
-		[[nodiscard]] Window      * window()       const noexcept { return _game.window();       }
-		[[nodiscard]] Renderer    * renderer()     const noexcept { return _game.renderer();     }
+		[[nodiscard]] constexpr Window   * window()   const noexcept { return _game.window();   }
+		[[nodiscard]] constexpr Renderer * renderer() const noexcept { return _game.renderer(); }
 	};
 
 	// abstract, pseudo interface (contains fields)
 	class IGame
 	{
+		ImGuiOnly(
+			Array<f32,128> _frameTimesTotal;
+			Array<f32,128> _frameTimesUpdate;
+			Array<f32,128> _frameTimesRender;
+			Array<f32,128> _frameTimesDeltaT;
+			uint           _frameTimesIndex      = 0;
+			bool           _isFrameTimeRecording = true;
+			bool           _isFrameTimeVisible   = false; )
+
 	protected:
 		/// Types
 		enum class NextStateOp : u8
@@ -95,18 +104,27 @@ namespace JanSordid::SDL
 			Pop,        //  Removes the GameStateIndex on top of the stack
 		};
 
+		static constexpr f32 ScalingFactorDynamic = -1;
+		static constexpr int VSyncDisabled        = SDL_RENDERER_VSYNC_DISABLED;
+		static constexpr int VSyncAdaptive        = SDL_RENDERER_VSYNC_ADAPTIVE;
+
 		/// Members / Fields
 		Owned<Window>   _window;
 		Owned<Renderer> _renderer;
 		u64             _framesSinceStart = 0;
-		u64             _msSinceStart     = 0;
+		Duration        _timeSinceStart   = Duration::zero();
 
+		// TODO: This needs to become a queue to work with multiple changes in one frame
 		DynArray<u8>    _stateStack;      // Not a std::stack since it's necessary to look inside without de-stacking
 		u8              _stateNextVal;
 		NextStateOp     _stateNextOp      = NextStateOp::None;
 
-		f32             _scalingFactor;
-		bool            _isRunning        = true;
+		f32  _scalingFactor;
+		bool _isRunning = true;
+
+		SDL_Point    _requestedSizeScaled;
+		const char * _windowTitle;
+		int          _vSync;
 
 	public:
 		/// Ctors & Dtor
@@ -116,9 +134,9 @@ namespace JanSordid::SDL
 		//  integer floating point values for pixel perfect scaling
 		explicit IGame(
 			const char * windowTitle   = "SDL Game",
-			const float  scalingFactor = -1.0f,
-			const Point  requestedSize = Point { 640, 360 },
-			const bool   vSync         = true ) noexcept;
+			const Point  requestedSize = { 640, 360 },
+			const f32    scalingFactor = ScalingFactorDynamic,
+			const int    vSync         = VSyncAdaptive ) noexcept;
 		virtual ~IGame() noexcept;
 
 		IGame(              const IGame &  ) = delete;
@@ -127,18 +145,18 @@ namespace JanSordid::SDL
 		IGame && operator=(       IGame && ) = delete;
 
 		/// Getters & Setters: non-virtual first, followed by (pure) virtual/override
-		[[nodiscard]] constexpr bool          isRunning()         const noexcept { return _isRunning;  }
-		[[nodiscard]]           Window      * window()            const noexcept { return _window.get();   } // even though this is a pointer, it is usually not null
-		[[nodiscard]]           Renderer    * renderer()          const noexcept { return _renderer.get(); } // even though this is a pointer, it is usually not null
-		[[nodiscard]]           f32           scalingFactor()     const          { return _scalingFactor; }
-		[[nodiscard]] constexpr bool          isStateChanging()   const noexcept { return _stateNextOp != NextStateOp::None; }
-		[[nodiscard]]           u8            currentStateIndex() const          { assert( !_stateStack.empty() ); return _stateStack.back(); }
+		[[nodiscard]] constexpr bool       isRunning()         const noexcept { return _isRunning;  }
+		[[nodiscard]]           Window   * window()            const noexcept { return _window.get();   } // even though this is a pointer, it is usually not null
+		[[nodiscard]]           Renderer * renderer()          const noexcept { return _renderer.get(); } // even though this is a pointer, it is usually not null
+		[[nodiscard]]           f32        scalingFactor()     const          { return _scalingFactor; }
+		[[nodiscard]] constexpr bool       isStateChanging()   const noexcept { return _stateNextOp != NextStateOp::None; }
+		[[nodiscard]] constexpr u8         currentStateIndex() const          { Assert( !_stateStack.empty() ); return _stateStack.back(); }
 
 		[[nodiscard]] virtual constexpr       IGameState &  currentState()                  = 0;
 		[[nodiscard]] virtual constexpr const IGameState &  currentState()   const          = 0;
 		[[nodiscard]] virtual constexpr       usize         numberOfStates() const noexcept = 0;
 
-		[[nodiscard]] virtual constexpr bool isStateIndexValid( u8 index ) const noexcept
+		[[nodiscard]] virtual constexpr bool  isStateIndexValid( u8 index ) const noexcept
 		{
 			return (usize)index < numberOfStates();
 		}
@@ -152,8 +170,11 @@ namespace JanSordid::SDL
 	protected:
 		void ChangeState();
 	private:
+		void CreateWindowEtc();
+		void DestroyWindowEtc();
 		ImGuiOnly(
-			void CreateImGui( Renderer * renderer, Window * window );)
+			void CreateImGui();
+			void DestroyImGui();)
 
 	public:
 		virtual int  Run();
@@ -162,7 +183,7 @@ namespace JanSordid::SDL
 		virtual void Update( f32 deltaT );
 		virtual void Render( f32 deltaTNeeded );
 		ImGuiOnly(
-			virtual void RenderUI( f32 deltaTNeeded );)
+			virtual void RenderUI( f32 deltaTNeeded ); )
 
 
 		/// Performance
@@ -173,8 +194,9 @@ namespace JanSordid::SDL
 		enum class PerformanceDrawMode : u8
 		{
 			None,
-			Title,      // averaged and only updated every 250ms
-			OStream,    // averaged and only updated every 1000ms
+			Title   = 0b001, // averaged and only updated every 250ms
+			OStream = 0b010, // averaged and only updated every 1000ms
+			Graph   = 0b100, // draw as imgui graph
 		};
 
 		void SetPerfDrawMode( PerformanceDrawMode mode ) noexcept { _perfDrawMode = mode; }

@@ -7,6 +7,8 @@
 	#include <imgui_impl_sdl3.h>
 	#include <imgui_impl_sdlrenderer3.h>
 
+	#include <implot.h>
+
 	#define ImGuiOnly( ... )    __VA_ARGS__
 	#define IfImGui             if constexpr( true )
 #else

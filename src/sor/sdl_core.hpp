@@ -11,6 +11,7 @@
 #include "sdl_smartptr.hpp"
 
 // Additional convenience defines
+#define BasePathAsset   BasePath      "asset/"
 #define BasePathFont    BasePathAsset "font/"
 #define BasePathGraphic BasePathAsset "graphic/"
 #define BasePathMap     BasePathAsset "map/"
@@ -25,14 +26,11 @@ namespace JanSordid::SDL
 	constexpr SDL_InitFlags SDL_INIT_EVERYTHING
 		= SDL_INIT_AUDIO
 		| SDL_INIT_VIDEO
-		| SDL_INIT_JOYSTICK
 		| SDL_INIT_HAPTIC
 		| SDL_INIT_GAMEPAD
-		| SDL_INIT_EVENTS
-		| SDL_INIT_SENSOR
 		| SDL_INIT_CAMERA;
 
-	/// Aliases of SDL_ for easy usage
+	/// Aliases of std::, SDL_, TTF_, Mix_ for easy usage
 
 	// Types which need memory management
 	using Window      = SDL_Window;
@@ -56,15 +54,16 @@ namespace JanSordid::SDL
 	using Event       = SDL_Event;
 	using Point       = SDL_Point;
 	using FPoint      = SDL_FPoint;
+	using Vec         = SDL_FPoint;
 	using Keymod      = SDL_Keymod;
 	using Rect        = SDL_Rect;
 	using FRect       = SDL_FRect;
 
-	template<typename T, typename TDel = std::default_delete<T>> using Owned     = AutocastUnique<T,TDel>;
-	template<typename T>                                         using Shared    = AutocastShared<T>;
-	template<typename T>                                         using WeakShare = AutocastWeakShare<T>;
+	template<typename T, typename TDel = std::default_delete<T>> using Owned     = Core::AutocastUnique<T,TDel>;
+	template<typename T>                                         using Shared    = Core::AutocastShared<T>;
+	template<typename T>                                         using WeakShare = Core::AutocastWeakShare<T>;
 
-	constexpr JanSordid::Core::u32 ToU32( const Color & c )
+	constexpr Core::u32 ToU32( const Color & c )
 	{
 		return (c.r << 0)
 		     | (c.g << 8)
@@ -72,16 +71,22 @@ namespace JanSordid::SDL
 		     | (c.a << 24);
 	}
 
-	constexpr Color ToColor( const JanSordid::Core::u32 & c )
+	constexpr Color ToColor( const Core::u32 & c )
 	{
 		// TODO: I don't need it now and I am tired :D
 		if (!std::is_constant_evaluated())
 			assert( false );
 		return Color {
-			(JanSordid::Core::u8)(c>>0 & 0xFF),
-			(JanSordid::Core::u8)(c>>8 & 0xFF),
-			(JanSordid::Core::u8)(c>>16 & 0xFF),
-			(JanSordid::Core::u8)(c>>24 & 0xFF),
+			(Core::u8)(c>>0 & 0xFF),
+			(Core::u8)(c>>8 & 0xFF),
+			(Core::u8)(c>>16 & 0xFF),
+			(Core::u8)(c>>24 & 0xFF),
 		};
 	}
+
+	inline bool SDL_SetRenderDrawColor( Renderer * renderer, const Color color )
+	{
+		return SDL_SetRenderDrawColor( renderer, color.r, color.g, color.b, color.a );
+	}
+
 }

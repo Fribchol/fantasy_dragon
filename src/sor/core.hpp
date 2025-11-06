@@ -28,8 +28,6 @@
 	#define BasePath "../../../"
 #endif
 
-#define BasePathAsset BasePath "asset/"
-
 /*
  * Ask how could the macro be extended to add the msg if none given
  * by stringifying the cond, or having the ability to receive a handwritten msg
@@ -85,12 +83,16 @@ constexpr void MyAssert( T condition, const char * msg) {
 #endif
 
 
-namespace JanSordid::Core
+namespace JanSordid::Core//::inline V1
 {
 	/// Aliases of a lot of std:: for easy usage
 
+	namespace Chrono         { using namespace std::chrono;          }
+	namespace ChronoLiterals { using namespace std::chrono_literals; }
+	namespace Numbers        { using namespace std::numbers;         }
+
 	// Usage of `int` and `uint` conveys:
-	//  I don't mind about the size, don't use for preserved data (structs, classes, globals)
+	//  I don't mind about the size, avoid for preserved data (structs, classes, globals)
 	using uint  = unsigned int;
 
 	// Types with defined size
@@ -117,34 +119,51 @@ namespace JanSordid::Core
 	// E.g. for use as type in user defined literals
 	using imax  = std::intmax_t;
 	using umax  = std::uintmax_t;
-	using fmax  = long double; // this is not consistent, can be: f64, f80, f96, or f128
+	using fmax  = long double; // This is not consistent, can be: f64, f80, f96, or f128
 
 	// TODO: Do all the other types as well?
-	constexpr f32  operator"" _f32 (long double n) { return (f32)n; }
-	constexpr f64  operator"" _f64 (long double n) { return (f64)n; }
+	constexpr f32  operator""_f32 (unsigned long long n) { return (f32)n; }
+	constexpr f64  operator""_f64 (unsigned long long n) { return (f64)n; }
+	constexpr f32  operator""_f32 (long double n) { return (f32)n; }
+	constexpr f64  operator""_f64 (long double n) { return (f64)n; }
 
 	// Classes / Structs
 	using String        = std::string;
 	using StringView    = std::string_view;
 
-	using Clock         = std::chrono::high_resolution_clock;
+	using NanoSec       = Chrono::nanoseconds;                     // Nanoseconds
+	using MilliSec      = Chrono::milliseconds;                    // Milliseconds
+	using Sec           = Chrono::seconds;                         // Nanoseconds
+	using FNanoSec      = Chrono::duration<f32, NanoSec::period>;  // Nanoseconds as float
+	using FMilliSec     = Chrono::duration<f32, MilliSec::period>; // Milliseconds as float
+	using FSec          = Chrono::duration<f32, Sec::period>;      // Seconds as float
+	using Clock         = Chrono::high_resolution_clock;
 	using TimePoint     = Clock::time_point;
-	using Duration      = Clock::duration;
+	using Duration      = Clock::duration; // Should be nanoseconds, but maybe don't rely on it
+	static_assert( std::is_same_v<Duration, NanoSec> ); // If this breaks, revisit a lot of Update and Render calls
 
 	using File          = std::FILE;
 
 	// Math Functions
 	using std::min, std::max;
 	using std::abs, std::sin, std::cos;
+	using std::floor, std::ceil, std::round, std::lround, std::llround;
+
+	// Chrono Functions
+	using Chrono::duration_cast;
+	using ChronoLiterals::operator ""ns;
+	using ChronoLiterals::operator ""ms,
+	      ChronoLiterals::operator ""s;
 
 	// Functions
 	using std::move, std::forward;
 	using std::make_unique, std::make_shared;
+	using std::to_underlying;
 
 	// Templates
 	template<typename T, usize Size>            using Array     = std::array<T, Size>;
 	template<typename T>                        using DynArray  = std::vector<T>;
-	template<typename T>                        using Vector    = std::vector<T>;
+//	template<typename T>                        using Vector    = std::vector<T>;
 	template<typename T>                        using HashSet   = std::unordered_set<T>;
 	template<typename TKey, typename TValue>    using HashMap   = std::unordered_map<TKey,TValue>;
 
@@ -152,9 +171,6 @@ namespace JanSordid::Core
 	template<typename T, typename TDel = std::default_delete<T>>   using UniquePtr = std::unique_ptr<T,TDel>;
 	template<typename T>                                           using SharedPtr = std::shared_ptr<T>;
 	template<typename T>                                           using WeakPtr   = std::weak_ptr<T>;
-
-	namespace ChronoLiterals { using namespace std::chrono_literals; }
-	namespace Numbers        { using namespace std::numbers;         }
 
 	template <typename... T>
 	inline void print_once( format_string<T...> fmt, T && ... args )

@@ -2,86 +2,73 @@
 
 #include "example_game.hpp"
 
+#include <hsnr64/tiles.hpp>
+
+#define lambda auto
+
 namespace JanSordid::SDL_Example
 {
+	using namespace JanSordid::SDL;
+	using namespace JanSordid::HSNR64;
+
 	class MapEditorState final : public MyGameState
 	{
 		using Base = MyGameState;
 
 	protected:
-		using Tile = HSNR64::Tile64K;
+		using Tile = Tile64K;
 
-		HSNR64::TileSet _tileSet;
-		HSNR64::TileMap _tileMaps[2];
+		TileSet _tileSet;
+		TileMap _tileMaps[2];
 
 		// Map Viewport
-		FPoint  _viewScale  = { 2, 2 };
-		FPoint  _viewOffset = { -256, -256 };
+		FPoint  _viewScale       = { 2, 2 };
+		FPoint  _viewOffset      = { -256, -256 };
 
 		// Palette
 		FPoint  _paletteScale    = { 2, 2 };
 		FPoint  _paletteOffset   = { 0, 0 };
 
-		int     _selectedLayer   = 0;
+		int     _selectedLayer   = 1;
 		int     _selectedIndex   = 0;
 		int     _selectedMod     = 0; // Index of Rotations & Flips
 		int     _selectedColor   = 10;
-		int     _selectedAlpha   = 4;
+		int     _selectedAlpha   = 3;
 		int     _selectedRotation= 0;
 		int     _selectedFlip    = 0;
 		int     _buttonHeld      = 0;
 		bool    _isKeepColor     = false;
 		bool    _isKeepAlpha     = false;
-
-		// Care: all below might be junk
-
-		Texture * bg[4] = { nullptr };
-		Point bgSize[4];
-		const FPoint bgStart[4] = {
-			{ 0,    -330 },
-			{ -350, -330 },
-			{ -450, -900 },
-			{ -800, -1500 },
-		};
-		const FPoint bgFactor[4] = {
-			{ 0.2f, 0.3f },
-			{ 0.4f, 0.45f },
-			{ 0.8f, 0.8f },
-			{ 1.2f, 1.2f },
-		};
-		bool bgIsVisible[4] = {
-			true,
-			true,
-			true,
-			true,
-		};
-		FPoint mouseOffset      = { 0, 0 };
-		FPoint mouseOffsetEased = { 0, 0 };
-
-		bool   isInverted = false;
-		bool   isEased    = true;
-		bool   isFlux     = true;
-		FPoint cam { .x = 0, .y = 0 };
+		bool    _isCtrlHeld      = false;
 
 	public:
+		using PerTileCallback = Tile( const Point pos, const Point size );
+
+		static lambda uniformTile( const TileColor color, const FlipRot flipRot, const u16 index );
+		static PerTileCallback emptyTile;
+		static PerTileCallback randomTile;
+		static PerTileCallback randomSolidTile;
+
 		/// Ctors & Dtor
 		using Base::Base;
 
 		void Init() override;
 		void Destroy() override;
 
+		template <typename TCallback>
+		void FillLayer( const u8 layer, TCallback       callback );
+		void FillLayer( const u8 layer, PerTileCallback callback = randomSolidTile );
+		void SetTile( const u8 layer, const Point tileIndex, const u8 color, const u8 alpha, const FlipRot flipRot, const u16 paletteIndex );
+
 		template <typename E>
 		void HandleSpecificEvent( const E & ev );
-		bool HandleEvent( const Event & event ) override;
-		void Update( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaT ) override;
-		void Render( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaTNeeded ) override;
+		bool Input( const Event & event ) override;
+		void Update( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaT ) override;
+		void Render( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaTNeeded ) override;
 		ImGuiOnly(
-			void RenderUI( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaTNeeded ) override;
+			void RenderUI( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaTNeeded ) override;
 		)
 
 		void SaveMap() const;
-
-		FPoint CalcFluxCam( const u32 totalMSec ) const;
-		void RenderLayer( const Point winSize, const FPoint camPos, const int index ) const;
 	};
 }

@@ -13,10 +13,11 @@ namespace JanSordid::SDL_Example
 
 		if( !_font )
 		{
-			_font = TTF_OpenFont( BasePath "asset/font/RobotoSlab-Bold.ttf", (int)(10.0f * _game.scalingFactor()) );
-			TTF_SetFontHinting( _font, TTF_HINTING_LIGHT );
+			_font = TTF_OpenFont( BasePath "asset/font/RobotoSlab-Bold.ttf", (int)(_game.scalingFactor() * 10) );
 			if( !_font )
 				print( stderr, "TTF_OpenFont failed: {}\n", SDL_GetError() );
+			TTF_SetFontHinting( _font, TTF_HintingFlags::TTF_HINTING_LIGHT_SUBPIXEL );
+			//TTF_SetFontSDF( _font, true );
 		}
 
 		if( !_image )
@@ -73,7 +74,7 @@ namespace JanSordid::SDL_Example
 		Base::Destroy();
 	}
 
-	bool IntroState::HandleEvent( const Event & event )
+	bool IntroState::Input( const Event & event )
 	{
 		switch( event.type )
 		{
@@ -133,17 +134,17 @@ namespace JanSordid::SDL_Example
 		return false;
 	}
 
-	void IntroState::Update( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaT )
+	void IntroState::Update( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaT )
 	{
 	}
 
-	void IntroState::Render( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaTNeeded )
+	void IntroState::Render( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaTNeeded )
 	{
 		Point windowSize;
 		SDL_GetWindowSize( window(), &windowSize.x, &windowSize.y );
 
 		{
-			const FRect dst_rect = { 0, 0, (f32)windowSize.x, (f32)windowSize.y };
+			const FRect dst_rect = toWH( toF( windowSize ) );
 			SDL_RenderTexture( renderer(), _image, EntireFRect, &dst_rect /* same result as EntireRect */ );
 		}
 
@@ -155,7 +156,7 @@ namespace JanSordid::SDL_Example
 				"Dies ist ein Typoblindtext. An ihm kann man sehen, ob alle Buchstaben da sind und wie sie aussehen. "
 				"Manchmal benutzt man Worte wie Hamburgefonts, Rafgenduks oder Handgloves, um Schriften zu testen. "
 				"Manchmal Sätze, die alle Buchstaben des Alphabets enthalten - man nennt diese Sätze »Pangrams«. "
-				"Sehr bekannt ist dieser: The quick brown fox jumps over the lazy old dog. "
+				"Sehr bekannt ist dieser: The quick brown fox jumps over the lazy dog.\n"
 				"Oft werden in Typoblindtexte auch fremdsprachige Satzteile eingebaut (AVAIL® and Wefox™ are testing aussi la Kerning), um die Wirkung in anderen Sprachen zu testen. "
 				"In Lateinisch sieht zum Beispiel fast jede Schrift gut aus. Quod erat demonstrandum. "
 				"Seit 1975 fehlen in den meisten Testtexten die Zahlen, weswegen nach TypoGb. §.204 ab dem Jahr 2034 Zahlen in 86 der Texte zur Pflicht werden. "
@@ -211,7 +212,7 @@ namespace JanSordid::SDL_Example
 			}
 			else
 			{
-				FRect dimension { _textStartPoint.x, _textStartPoint.y, windowSize.x - (32 + _textStartPoint.x), 9999 };
+				FRect dimension { round( _textStartPoint.x ), round( _textStartPoint.y ), windowSize.x - (32 + _textStartPoint.x), 9999 };
 				_tf.Render( text, dimension, HSNR64::Palette( _colorIndex ), outlineColor );
 			}
 		}
@@ -219,12 +220,15 @@ namespace JanSordid::SDL_Example
 
 #ifdef IMGUI
 
-	void IntroState::RenderUI( const u64 frame, const u64 totalMSec, const f32 deltaTNeeded )
+	void IntroState::RenderUI( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaTNeeded )
 	{
 		// ImGui Demo
 		static bool show_demo_window = true;
-		ImGui::SetNextWindowCollapsed( true, ImGuiCond_Once );
-		ImGui::ShowDemoWindow( &show_demo_window );
+		if( _showExampleWindow )
+		{
+			ImGui::SetNextWindowCollapsed( true, ImGuiCond_Once );
+			ImGui::ShowDemoWindow( &show_demo_window );
+		}
 
 		Point windowSize;
 		SDL_GetWindowSize( window(), &windowSize.x, &windowSize.y );
@@ -233,7 +237,7 @@ namespace JanSordid::SDL_Example
 		static bool drawColorNumber = false;
 		//ImGuiIO & io = ImGui::GetIO();
 		ImGui::Begin( "Introstate", nullptr, ImGuiWindowFlags_NoFocusOnAppearing );
-		if( frame == 0 ) // Do not focus this new window
+		if( framesSinceStart == 0 ) // Do not focus this new window
 			ImGui::SetWindowFocus( nullptr );
 
 		if( ImGui::SliderFloat( "int", &_textStartPoint.x, 0, windowSize.x / 2 ) && autoUpdate )
@@ -274,11 +278,6 @@ namespace JanSordid::SDL_Example
 			? withNumber
 			: withoutNumber;
 
-		auto needsLinebreak = []( int i )
-		{
-			return i == 10 || i == 25 || i == 40 || i == 52;
-		};
-
 		for( int i = 0; i < 64; ++i )
 		{
 			const SDL_Color & color = HSNR64::Palette( i );
@@ -292,7 +291,7 @@ namespace JanSordid::SDL_Example
 			ImGui::PopStyleColor( 2 );
 			//ImGui::ColorButton( format( "color{}", i ).c_str(), *((ImVec4*)&hsnr64::Palette[i]), ImGuiColorEditFlags_Uint8 );
 			//if(i%10 != 0)
-			if( !needsLinebreak( i ) )
+			if( !HSNR64::ColorNeedsLinebreak( i ) )
 				ImGui::SameLine();
 		}
 		ImGui::NewLine(); // Undo last SameLine
@@ -302,11 +301,20 @@ namespace JanSordid::SDL_Example
 
 		if( ImGui::Button( "Open" ) ) [[unlikely]]
 		{
-			NFD::UniquePath   path;
-			const NFD::Result result = NFD::OpenDialog( path, NFD::EmptyFilter, 0, NFD::EmptyPath );    // Freezes execution of the Game
+			const auto filePicked = []( void * _this, const char * const * filelist, int filter )
+			{
+				if( filelist && *filelist )
+					print( "NEW Success! Path is {0}\n", *filelist );
+			};
+			SDL_ShowOpenFileDialog( filePicked, this, window(), nullptr, 0, nullptr, false );
 
-			if( result == NFD::Result::NFD_OKAY )
-				print( "Success! Path is {0}\n", path.get() );
+			// Care: Program does not wait for the Dialog to finish
+
+			NFD::UniquePath   path;
+			//const NFD::Result result = NFD::OpenDialog( path, NFD::EmptyFilter, 0, NFD::EmptyPath );    // Freezes execution of the Game
+
+			//if( result == NFD::Result::NFD_OKAY )
+			//	print( "Success! Path is {0}\n", path.get() );
 		}
 
 		ImGui::SameLine();
@@ -348,6 +356,8 @@ namespace JanSordid::SDL_Example
 			if( result == NFD::Result::NFD_OKAY )
 				print( "Success! Path is {0}\n", path.get() );
 		}
+
+		ImGui::Checkbox( "Show Example Window", &_showExampleWindow );
 
 		ImGui::End();
 	}

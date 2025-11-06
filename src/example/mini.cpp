@@ -14,10 +14,10 @@ int main( int argc, char * argv [] )
 namespace NotJanSordid::SDL_MiniExample
 {
 	MiniGame::MiniGame()
-		: Game( "MiniExampleGame", -1, Point{ 640, 360 }, false )
+		: Game( "MiniExampleGame", { 640, 360 }, -1, VSyncDisabled )
 	{
 		// The same as the _allStates.emplace...
-		AddStates<MiniState>( *this );
+		AddStates<MiniState>( *this ); // State 0
 		//_allStates.emplace_back( make_unique<MiniState>( *this ) );
 
 		PushState( 0 );

@@ -3,14 +3,15 @@
 #include "simpleeditor.hpp"
 #include "roflstate.hpp"
 #include "mapeditor.hpp"
+#include "tgui.hpp"
 
 namespace JanSordid::SDL_Example
 {
-	constexpr bool doBenchmark = false;
+	constexpr bool DoBenchmark = false;
 
 	MyGame::MyGame()
-		: Base( "Example SDL Game", -1.0f, Point { 640, 360 }, !doBenchmark )
-	//	: Base( "Example SDL Game", 1.0f, Point { 1280, 960 }, !doBenchmark )
+		: Base( "Example SDL Game", { 640, 360 },  ScalingFactorDynamic, DoBenchmark ? VSyncDisabled : VSyncAdaptive )
+	//	: Base( "Example SDL Game", Point { 1280, 960 }, ScalingFactorDynamic, doBenchmark ? 0 : VSyncAdaptive )
 	{
 		AddStates<
 			IntroState,
@@ -20,8 +21,9 @@ namespace JanSordid::SDL_Example
 			ShooterState,
 			EditorState,
 			RoflState,
-			MapEditorState
-			>( *this );
+			MapEditorState,
+			TGUIState
+		>( *this );
 
 		// Set initial State
 		PushState( MyGS::Intro );
@@ -40,7 +42,7 @@ namespace JanSordid::SDL_Example
 		{
 			case SDL_EVENT_KEY_DOWN:
 			{
-				const auto & what_key = event.key;
+				const SDL_KeyboardEvent & what_key = event.key;
 
 				if( what_key.scancode == SDL_SCANCODE_1 )
 				{
@@ -84,6 +86,11 @@ namespace JanSordid::SDL_Example
 					ReplaceState( MyGS::AdvEditor );
 					return true;
 				}
+				else if( what_key.scancode == SDL_SCANCODE_9 )
+				{
+					ReplaceState( MyGS::GUI );
+					return true;
+				}
 				else if( what_key.scancode == SDL_SCANCODE_0 )
 				{
 					ReplaceState( MyGS::Invalid );
@@ -98,6 +105,14 @@ namespace JanSordid::SDL_Example
 
 		return false;
 	}
+
+	void MyGame::Update( const f32 deltaT )	{ Base::Update( deltaT ); }
+
+	void MyGame::Render( const f32 deltaT ) { Base::Render( deltaT ); }
+
+#if IMGUI
+	void MyGame::RenderUI( const f32 deltaTNeeded ) { Base::RenderUI( deltaTNeeded ); }
+#endif
 }
 
 int main( int argc, char * argv [] )

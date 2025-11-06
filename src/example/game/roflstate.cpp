@@ -54,22 +54,25 @@ namespace JanSordid::SDL_Example
 		IGameState::Destroy();
 	}
 
-	bool RoflState::HandleEvent( const Event & event )
+	bool RoflState::Input( const Event & event )
 	{
-		return false;
+		return event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F1 && (_isPathRendered = !_isPathRendered);
+		//return false;
 	}
 
-	void RoflState::Update( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaT )
+	void RoflState::Update( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaT )
 	{
-		if( _respawnCD < msSinceStart )
+		if( _respawnCD < timeSinceStart )
 		{
-			_minions[0].push_back( Entity{ _paths[0][0], 1, 0, 100 } );
-			_minions[1].push_back( Entity{ _paths[1][0], 1, 1, 100 } );
+			//using namespace ChronoLiterals;
 
-			_respawnCD = msSinceStart + 2000;
+			_minions[0].push_back( Entity{ _paths[0][0], 1, 0, 100, 0 } );
+			_minions[1].push_back( Entity{ _paths[1][0], 1, 1, 100, 0 } );
+
+			_respawnCD = timeSinceStart + 2s;
 		}
 
-		constexpr f32 speed = 50;
+		constexpr f32 Speed = 50;
 		for( int faction = 0; faction <= 1; ++faction )
 		{
 			for( auto & minion : _minions[faction] )
@@ -77,7 +80,7 @@ namespace JanSordid::SDL_Example
 				const FPoint & nextPos   = _paths[faction][minion.nextPath];
 				const FPoint   diffPos   = nextPos - minion.position;
 				const f32      length    = calcLength( diffPos );
-				const f32      distance  = speed * deltaT;
+				const f32      distance  = Speed * deltaT;
 				const bool     isReached = distance >= length;
 				if( isReached )
 				{
@@ -93,6 +96,10 @@ namespace JanSordid::SDL_Example
 				{
 					const FPoint normalizedDiff = diffPos / length * distance;
 					minion.position += normalizedDiff;
+					if( diffPos.x != 0 )
+					{
+						minion.direction = diffPos.x < 0 ? -1 : 1;
+					}
 				}
 			}
 		}
@@ -104,7 +111,7 @@ namespace JanSordid::SDL_Example
 			{
 				if( minion.health <= 0 )
 				{
-					// TODO: Actually remove the dead minions, now dead minions are still in
+					// TODO: Actually remove the dead minions, now dead minions remain in the array
 					continue;
 				}
 
@@ -112,26 +119,36 @@ namespace JanSordid::SDL_Example
 				{
 					if( oppoMinion.health <= 0 )
 					{
-						// TODO: Actually remove the dead minions, now dead minions are still in
+						// TODO: Actually remove the dead minions, now dead minions remain in the array
 						continue;
 					}
 
-					const FPoint diffPos = oppoMinion.position - minion.position;
-					const f32    length  = calcLength( diffPos );
-					if( length < 15 )
+					constexpr f32
+						MeleeDist   = 15,
+						MeleeDistSq = MeleeDist * MeleeDist;
+
+					const FPoint diffPos  = oppoMinion.position - minion.position;
+					const f32    lengthSq = calcLengthSq( diffPos );
+					if( lengthSq < MeleeDistSq )
 					{
-						// TODO: actually fight, for now just die
+						// TODO: actually fight, for now both just die
 						minion.health = 0;
 						oppoMinion.health = 0;
+
+						_explosionDeadline = timeSinceStart + 500ms;
+						_explosionPosition = minion.position + diffPos/2;
 					}
 				}
 			}
 		}
 	}
 
-	void RoflState::Render( u64 framesSinceStart, u64 msSinceStart, f32 deltaTNeeded )
+	void RoflState::Render( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaTNeeded )
 	{
-		const SDL_FlipMode flipAnim = msSinceStart / 200 % 2 ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL;
+		const i64 totalMS = duration_cast<MilliSec>( timeSinceStart ).count();
+		const i64 changeFiveTimesASecond = totalMS / 200;
+		const i64 changeThreeTimesASecond = totalMS / 333;
+		const SDL_FlipMode flipAnim = changeFiveTimesASecond % 2 ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL;
 
 		//SDL_SetTextureBlendMode( _tileset, SDL_BLENDMODE_BLEND );
 		//SDL_SetRenderDrawBlendMode( renderer(), SDL_BLENDMODE_BLEND);
@@ -160,8 +177,11 @@ namespace JanSordid::SDL_Example
 			dst.y += 1;
 		}
 
-		SDL_SetRenderDrawColor( renderer(), 156, 107, 48, 255 );
-		SDL_RenderLines( renderer(), _paths[0].data(), _paths[0].size() );
+		if( _isPathRendered )
+		{
+			SDL_SetRenderDrawColor( renderer(), 156, 107, 48, 255 );
+			SDL_RenderLines( renderer(), _paths[0].data(), _paths[0].size() );
+		}
 
 		for( int faction = 0; faction <= 1; ++faction )
 		{
@@ -176,7 +196,7 @@ namespace JanSordid::SDL_Example
 					continue;
 				}
 
-				const FRect srcRect = toXY( FPoint{ 18, 33 } * srcSize, srcSize );
+				const FRect srcRect = toXY( FPoint{ 19 + (f32)(changeThreeTimesASecond % 2), 33 } * srcSize, srcSize );
 				const FRect dstRect = toXY( minion.position - halfDst, dstSize );
 				SDL_RenderTextureRotated(
 					renderer(),
@@ -185,8 +205,26 @@ namespace JanSordid::SDL_Example
 					&dstRect,
 					0,
 					nullptr,
-					SDL_FlipMode::SDL_FLIP_NONE );
+					minion.direction == -1
+						? SDL_FlipMode::SDL_FLIP_HORIZONTAL
+						: SDL_FlipMode::SDL_FLIP_NONE );
 			}
+		}
+
+		if( timeSinceStart <_explosionDeadline )
+		{
+			SDL_SetTextureColorMod( _tileset, 255, 127, 127 );
+
+			const FRect srcRect = toXY( FPoint{ 27 , 37 } * srcSize, srcSize );
+			const FRect dstRect = toXY( _explosionPosition - halfDst, dstSize );
+			SDL_RenderTextureRotated(
+				renderer(),
+				_tileset,
+				&srcRect,
+				&dstRect,
+				0,
+				nullptr,
+				(SDL_FlipMode)(changeFiveTimesASecond % 4) );
 		}
 
 		//SDL_SetRenderDrawColor( renderer(), 255, 255, 255, 255 );

@@ -45,7 +45,7 @@ namespace JanSordid::SDL_Example
 		Base::Destroy();
 	}
 
-	bool CameraState::HandleEvent( const Event & event )
+	bool CameraState::Input( const Event & event )
 	{
 		if( event.type == SDL_EVENT_KEY_DOWN && event.key.repeat == 0 )
 		{
@@ -91,7 +91,7 @@ namespace JanSordid::SDL_Example
 		}
 	}
 
-	bool CameraState::Input()
+	bool CameraState::StatefulInput()
 	{
 		const bool * key_array = SDL_GetKeyboardState( nullptr );
 		const float  factor    = key_array[SDL_SCANCODE_RSHIFT]
@@ -109,7 +109,7 @@ namespace JanSordid::SDL_Example
 		return false;
 	}
 
-	void CameraState::Update( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaT )
+	void CameraState::Update( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaT )
 	{
 		_camera += _direction * deltaT;
 
@@ -133,20 +133,21 @@ namespace JanSordid::SDL_Example
 		}
 	}
 
-	FPoint CameraState::CalcFluxCam( const u64 msSinceStart ) const
+	FPoint CameraState::CalcFluxCam( const Duration timeSinceStart ) const
 	{
-		const FPoint flux = _isFlux
+		const f32    timeInMS = duration_cast<FMilliSec>( timeSinceStart ).count();
+		const FPoint flux     = _isFlux
 			? FPoint {
-				.x = (f32)sin( msSinceStart / 650.0f  ) *  5.0f,
-				.y = (f32)sin( msSinceStart / 500.0f  ) * 10.0f
-				   + (f32)sin( msSinceStart / 850.0f  ) *  5.0f
-				   + (f32)cos( msSinceStart / 1333.0f ) *  5.0f }
+				.x = sin( timeInMS / 650.0f  ) *  5.0f,
+				.y = sin( timeInMS / 500.0f  ) * 10.0f
+				   + sin( timeInMS / 850.0f  ) *  5.0f
+				   + cos( timeInMS / 1333.0f ) *  5.0f }
 			: FPoint { 0, 0 };
 		const FPoint fluxCam = _camera + flux + _mouseOffsetEased;
 		return fluxCam;
 	}
 
-	void CameraState::Render( const u64 framesSinceStart, u64 msSinceStart, const f32 deltaTNeeded )
+	void CameraState::Render( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaTNeeded )
 	{
 		// Try the limits, moments before wraparound,
 		// only showing how bad they would behave if this var would be float instead, the cast to float happens inside CalcFluxCam
@@ -155,7 +156,7 @@ namespace JanSordid::SDL_Example
 		Point windowSize;
 		SDL_GetWindowSize( window(), &windowSize.x, &windowSize.y );
 
-		const FPoint fluxCam = CalcFluxCam( msSinceStart );
+		const FPoint fluxCam = CalcFluxCam( timeSinceStart );
 
 		for( int i = 0; i <= 3; ++i ) // The 4 layers, rendered back to front
 		{

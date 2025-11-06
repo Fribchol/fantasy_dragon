@@ -41,7 +41,7 @@ namespace JanSordid::SDL_Example
 		Base::Destroy();
 	}
 
-	bool SortState::HandleEvent( const Event & event )
+	bool SortState::Input( const Event & event )
 	{
 		if( event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F1 && event.key.repeat == 0 )
 			_isOrdered = !_isOrdered;
@@ -53,18 +53,18 @@ namespace JanSordid::SDL_Example
 		return true; // Not really correct
 	}
 
-	void SortState::Update( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaT )
+	void SortState::Update( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaT )
 	{
 		for( Ball & ball : _balls )
 		{
 			ball.x -= deltaT * 40.f;
-			ball.z = abs( sin( ball.w ) );          // bounce from 0 to 1 (twice each revolution)
+			ball.z = abs( sin( ball.w ) );        // bounce from 0 to 1 (twice each revolution)
 		//	ball.z = 0.5f + 0.5f * sin( ball.w ); // bob from 0 to 1
 			ball.w += deltaT * 2.0f;
 		}
 	}
 
-	void SortState::Render( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaTNeeded )
+	void SortState::Render( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaTNeeded )
 	{
 		const u8 alpha = _isTransparent ? 127 : 255;
 		SDL_SetTextureAlphaMod( _image, alpha );

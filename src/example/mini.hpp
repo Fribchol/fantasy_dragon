@@ -31,17 +31,17 @@ namespace NotJanSordid::SDL_MiniExample
 		/// Getters & Setters: non-virtual first, followed by (pure) virtual/override
 		[[nodiscard]] Color clearColor() const noexcept override {
 			return {
-				(u8) (128.0f + sin( _colorRolling * 0.002f ) * 128.0f),
-				(u8) (128.0f + sin( _colorRolling * 0.003f ) * 128.0f),
-				(u8) (128.0f + sin( _colorRolling * 0.005f ) * 128.0f),
+				(u8)(127.5f + sin( _colorRolling * 0.007f ) * 127.5f),
+				(u8)(127.5f + sin( _colorRolling * 0.003f ) * 127.5f),
+				(u8)(127.5f + sin( _colorRolling * 0.005f ) * 127.5f),
 				255
 			};
 		}
 
 		/// Methods: non-virtual first, followed by (pure) virtual/override
-		bool HandleEvent( const Event & event                                   ) override { return false; }
-		void Update( u64 framesSinceStart, u64 msSinceStart, float deltaT       ) override { _colorRolling = (f32)msSinceStart; }
-		void Render( u64 framesSinceStart, u64 msSinceStart, float deltaTNeeded ) override {}
+		bool Input( const Event & event                                                ) override { return false; }
+		void Update( u64 framesSinceStart, Duration timeSinceStart, float deltaT       ) override { _colorRolling = duration_cast<FMilliSec>( timeSinceStart ).count(); }
+		void Render( u64 framesSinceStart, Duration timeSinceStart, float deltaTNeeded ) override {}
 
 		//bool isFPSLimited() const noexcept override { return false; }
 	};

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "palette.hpp"
 #include "sor/core.hpp"
 #include "sor/sdl_core.hpp"
 #include "sor/sdl_shapeops.hpp"
@@ -22,7 +23,7 @@ namespace JanSordid::HSNR64
 		Rotate90        = 0b0100, // SDL_RenderTextureRotated::angle +90
 		Rotate45        = 0b1000, // SDL_RenderTextureRotated::angle +45, last in list to be able to be cut off, CARE: Can visibly overlap with surrounding tiles
 
-		// TODO: Check if Rotate45 could be written to a :3 version of this enum
+		// TODO: Check if Rotate45 could be written to a : 3 version of this enum
 
 		Rotate180       = HorizontalFlip | VerticalFlip,  // Flipping on both axis is the same as a 180-degree turn
 
@@ -32,12 +33,9 @@ namespace JanSordid::HSNR64
 		Rotate315       = Rotate45 | Rotate90 | Rotate180,
 	};
 
-	constexpr FlipRot operator &( const FlipRot lhs, const FlipRot rhs ) { return (FlipRot)(std::to_underlying(lhs) & std::to_underlying(rhs)); }
-	constexpr FlipRot operator |( const FlipRot lhs, const FlipRot rhs ) { return (FlipRot)(std::to_underlying(lhs) | std::to_underlying(rhs)); }
-	constexpr bool operator !( const FlipRot v ) { return v != FlipRot::None; }
-
-	static_assert(SDL_FlipMode::SDL_FLIP_HORIZONTAL == (SDL_FlipMode)FlipRot::HorizontalFlip);
-	static_assert(SDL_FlipMode::SDL_FLIP_VERTICAL   == (SDL_FlipMode)FlipRot::VerticalFlip);
+	constexpr FlipRot operator &( const FlipRot lhs, const FlipRot rhs ) { return (FlipRot)(to_underlying( lhs ) & to_underlying( rhs )); }
+	constexpr FlipRot operator |( const FlipRot lhs, const FlipRot rhs ) { return (FlipRot)(to_underlying( lhs ) | to_underlying( rhs )); }
+	constexpr bool    operator !( const FlipRot v ) { return v != FlipRot::None; }
 
 	// The Tileset to use is specified by the TileLayer
 
@@ -47,8 +45,8 @@ namespace JanSordid::HSNR64
 	// A Tile with only color and alpha, usable as background or to shade what is beneath
 	struct TileColor
 	{
-		u8 color :6;        // SDL_SetTextureColorMod, color == 63 means don't draw == invis - HACK: maybe 0 would be better?
-		u8 alpha :2;        // SDL_SetTextureAlphaMod // 0 = 25%, 1 = 50%, 2 = 75%, 3 = 100% - if color == invis, then this is irrelevant OR must also be 0?
+		u8 color :6;        // SDL_SetTextureColorMod, color == 0 means don't draw == invisible / transparent
+		u8 alpha :2;        // SDL_SetTextureAlphaMod // 0 = 25%, 1 = 50%, 2 = 75%, 3 = 100% - if color == 0, then this is irrelevant OR must also be 0?
 	};
 
 	// Has no flipping nor rotation
@@ -57,7 +55,7 @@ namespace JanSordid::HSNR64
 		u8 index :8;
 	};
 
-	// The 3 byte version only uses a 12 bit index, meaning 4096 indices (e.g. 64^2) are possible
+	// The 3 byte version only uses a 12 bit index, meaning 4096 indices (e.g. 64^2 or 32x128) are possible
 	struct Tile4K : TileColor
 	{
 		u8      index1  :8;        // index1 == 0 && index2 == 0 means don't draw... <- not needed since color == invis already says so
@@ -66,7 +64,7 @@ namespace JanSordid::HSNR64
 
 		#define TileIndex3Byte( index ) (u8)(index%256), (u8)(index/256)
 		[[nodiscard]] inline u16  index() const  { return index1 + index2 * 256; }
-					  inline void index( u16 i ) { index1 = i % 256; index2 = i / 256; }
+		              inline void index( u16 i ) { index1 = i % 256; index2 = i / 256; }
 	};
 
 	// The 3.5/4 byte version uses a 16 bit index, meaning 64k indices (e.g. 256^2) are possible,
@@ -78,29 +76,8 @@ namespace JanSordid::HSNR64
 
 		#define TileIndex4Byte( index ) (index)
 		[[nodiscard]] inline u16  index() const  { return index1; }
-					  inline void index( u16 i ) { index1 = i; }
+		              inline void index( u16 i ) { index1 = i; }
 	};
-
-	// How many fit a 2D Grid per 4K Page
-	static_assert( sizeof(TileColor) == 1 );	// 64x64*1 = 4096
-	static_assert( sizeof(Tile256)   == 2 );	// 45x45*2 = 4050
-	static_assert( sizeof(Tile4K)    == 3 );	// 36x36*3 = 3888 - 36x37*3 = 3996 - 35x39*3 = 4095 // Care: Not worth the effort right now
-	static_assert( sizeof(Tile64K)   == 4 );	// 32x32*4 = 4096
-
-	// C-compatible layout
-	static_assert( std::is_standard_layout_v<TileColor> );
-
-	// Safe for memcpy/bit ops
-	static_assert( std::is_trivially_copyable_v<TileColor> );
-	static_assert( std::is_trivially_copyable_v<Tile256> );
-	static_assert( std::is_trivially_copyable_v<Tile4K> );
-	static_assert( std::is_trivially_copyable_v<Tile64K> );
-
-	// Static initialization
-	static_assert( std::is_trivial_v<TileColor>);
-	static_assert( std::is_trivial_v<Tile256>);
-	static_assert( std::is_trivial_v<Tile4K>);
-	static_assert( std::is_trivial_v<Tile64K>);
 
 	// HACK: This must go
 	#ifdef TILE_INDEX_MAX_4096
@@ -114,56 +91,7 @@ namespace JanSordid::HSNR64
 		#define TileIndexCtor( index ) (index)
 	#endif
 
-	inline
-	void DrawTile( Renderer * renderer, Texture * tex, const Tile & curr_tile, const Tile & last_tile, const FRect & dst, const FPoint & center )
-	{
-		// Bullshit below: Index 0 should be usable and visible, color 0 (and also alpha 0) is invisible
-		// An index of 0 means: Do not render anything, which fills in for alpha 0% (which therefore does not exist as value in alpha)
-		// There needs to be a sentinel last_tile for the first call, which has color and alpha set to the default values
-		assertCE( curr_tile.index() != 0 ); // Prevent entering this function on index == 0
-		assertCE( last_tile.index() != 0 ); // The last_tile can also not be index == 0, pass in the one before that
-
-		// color == 0 also means do not draw
-		if( curr_tile.color == 0 )
-		{
-			return;
-		}
-		else if( curr_tile.color != last_tile.color )
-		{
-			/*
-			Surface     * surf;
-			PixelFormat * format = surf->format;
-			Palette     * pal    = format->palette;                 assert( curr_tile.index() < pal->ncolors );
-			Color       & col    = pal->colors[curr_tile.index()];
-			*/
-			const Color & col    = Palette( curr_tile.color );
-			SDL_SetTextureColorMod( tex, col.r, col.g, col.b );
-		}
-
-		if( curr_tile.alpha != last_tile.alpha )
-		{
-			// Variable alpha ends up with these 4 possible values
-			//  0: ~25% = 0b00'11'11'11 =  63(/255)
-			//  1: ~50% = 0b01'11'11'11 = 127(/255)
-			//  2: ~75% = 0b10'11'11'11 = 191(/255)
-			//  3: 100% = 0b11'11'11'11 = 255(/255)
-			u8 alpha = curr_tile.alpha << 6 | 0b11'11'11;
-			SDL_SetTextureAlphaMod( tex, alpha );
-		}
-
-		const Point        tileSize  = { 16, 16 };
-		const u16          stride    = 32; // How many per row
-		const u16          idx       = curr_tile.index();
-		const FRect        src       = toF( toXY( Point { (idx % stride), (idx / stride) }, tileSize.x )
-		                                  * tileSize );//toWH() { (idx % stride) * tileSizeX, (idx / stride) * tileSizeY, tileSizeX, tileSizeY };
-	//	const FRect        dst_final = FRect { 0, 0, tileSizeX , tileSizeY } + dst;
-		const f64          angle     = !(curr_tile.flipRot & FlipRot::Rotate45) * 45
-		                             + !(curr_tile.flipRot & FlipRot::Rotate90) * 90;
-		const SDL_FlipMode flip      = (SDL_FlipMode) (!(curr_tile.flipRot & FlipRot::HorizontalFlip) * SDL_FLIP_HORIZONTAL
-		                                             + !(curr_tile.flipRot & FlipRot::VerticalFlip)   * SDL_FLIP_VERTICAL);
-
-		SDL_RenderTextureRotated( renderer, tex, &src, &dst, angle, &center, flip );
-	}
+	void DrawTile( Renderer * renderer, Texture * tex, const Tile & curr_tile, const Tile & last_tile, const FRect & dst, const FPoint & center );
 
 	struct TileInfo
 	{
@@ -188,10 +116,10 @@ namespace JanSordid::HSNR64
 	// TODO: cacheability of the whole layer
 	struct TileMap // TileLayer
 	{
-		constexpr static float  halfSize  = 0.5f;
-		constexpr static FPoint halfPoint = { 0.5f, 0.5f };
+		static constexpr f32    halfSize  = 0.5f;
+		static constexpr FPoint halfPoint = { 0.5f, 0.5f };
 
-		Vector<Tile>    tiles;
+		DynArray<Tile>  tiles;
 		TileSet *       tileSet;
 		FPoint          tileDist    = { 16.0f, 16.0f };     // This should usually be the same as tileSet.tileSize, but for an overlapping TileSet this can for example be lower
 		FPoint          tileOffset  = {  0.0f,  0.0f };     // Offset from the zero coordinate
@@ -199,7 +127,7 @@ namespace JanSordid::HSNR64
 		FPoint          scrollScale = {  1.0f,  1.0f };     // Parallax scroll scaling
 		FPoint          center;  // = toF( tileSet->tileSize ) * sizeScale * halfSize;
 		Point           size;
-		int             stride;
+		int             stride; // Same as size.x?
 		SDL_BlendMode   blendMode   = SDL_BLENDMODE_BLEND;  // SDL_SetTextureBlendMode
 		SDL_ScaleMode   scaleMode   = SDL_ScaleMode::SDL_SCALEMODE_NEAREST; // SDL_SetTextureScaleMode -OR- SDL_HINT_RENDER_SCALE_QUALITY 0, 1, 2
 	//	DrawingOrder    order       = DrawingOrder::DontCare;
@@ -208,19 +136,19 @@ namespace JanSordid::HSNR64
 
 	struct MultiTileMap // MultiLayer
 	{
-		Vector<TileMap> layers;
-		Vector<bool>    enabledLayers;
+		DynArray<TileMap> layers;
+		DynArray<bool>    enabledLayers;
 	};
 
 
-	// TODO: Create a 2D vector, that supports growing in 2 dimensions.
+	// TODO: Create a 2D vector (more DynArray!), that supports growing in 2 dimensions.
 	// Consists of single-alloc-sectors which are a quadratic area each, e.g. 32x32x4bytes = 4096
 	template <typename T, size_t S>
 	class Vector2D
 	{
 	//	static_assert( isPowerOfTwo( S ) );
 		static_assert( S * S * sizeof( T ) <= 4096 );
-		Vector<Array<T, S * S>> sectors;
+		DynArray<Array<T, S * S>> sectors;
 
 		// method to grow x direction -> just append on the end
 		// method to grow y direction -> insert at 1..n * stride

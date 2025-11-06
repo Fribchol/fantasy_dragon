@@ -9,7 +9,9 @@ namespace JanSordid::SDL
 	//template class           Game<IGameState,u8>;
 	//template class GameState<Game<IGameState,u8>>;
 
-	IGame::IGame( const char * windowTitle, float scalingFactor, const Point logicalSize, const bool vSync ) noexcept
+	IGame::IGame( const char * const windowTitle, const Point requestedSize, f32 scalingFactor, const int vSync ) noexcept
+		: _windowTitle{ windowTitle },
+		  _vSync{ vSync }
 	{
 		if( !SDL_Init( SDL_INIT_EVERYTHING ) )
 		{
@@ -17,43 +19,87 @@ namespace JanSordid::SDL
 			exit( 1 );
 		}
 
+		//SDL_GL_SetAttribute( SDL_GL_MULTISAMPLEBUFFERS, 1 );
+		//SDL_GL_SetAttribute( SDL_GL_MULTISAMPLESAMPLES, 4 );
+
 		if( !TTF_Init() )
 		{
 			print( stderr, "TTF_Init failed: {}\n", SDL_GetError() );
 			exit( 2 );
 		}
 
-		constexpr MIX_InitFlags mixFlags = (MIX_InitFlags) (MIX_INIT_MP3 | MIX_INIT_OGG);
+		constexpr MIX_InitFlags mixFlags = (MIX_InitFlags)(MIX_INIT_MP3 | MIX_INIT_OGG);
 		if( Mix_Init( mixFlags ) != mixFlags )
 		{
 			print( stderr, "Mix_Init failed: {}\n", SDL_GetError() );
 			exit( 4 );
 		}
 
-		if( !Mix_OpenAudio( 0, nullptr ) )
-		{
-			print( stderr, "Mix_OpenAudio failed: {}\n", SDL_GetError() );
-			exit( 5 );
-		}
-
 		// Recalculate scalingFactor dynamically
-		if( scalingFactor == -1.0f )
+		if( scalingFactor == ScalingFactorDynamic )
 		{
 			const SDL_DisplayID     displayID   = SDL_GetPrimaryDisplay();
 			const SDL_DisplayMode * displayMode = SDL_GetDesktopDisplayMode( displayID );
-			const FPoint factor = toF( Point{displayMode->w, displayMode->h } ) / toF( logicalSize );
-			scalingFactor = std::max( 1.0f, std::floor( std::min( factor.x, factor.y ) - 0.2f ) );
+			const FPoint            factor      = toF( Point{ displayMode->w, displayMode->h } ) / toF( requestedSize );
+			scalingFactor                       = std::max( 1.0f, std::floor( std::min( factor.x, factor.y ) - 0.2f ) );
 
 			print( "Scaling Factor was calculated to be: {}\n", scalingFactor );
 		}
 
-		Point requestedSize = toI( toF( logicalSize ) * scalingFactor );
-		_window = SDL_CreateWindow(
-			windowTitle,
-			requestedSize.x,
-			requestedSize.y,
-			SDL_WINDOW_OPENGL );
+		if( scalingFactor != 1.0f )
+		{
+			// TODO: test if this works as intended
+			const bool isIntegerScaling = (scalingFactor == nearbyintf( scalingFactor ));
+			if( isIntegerScaling )
+			{
+//				SDL_RenderSetIntegerScale( _renderer, true );
+//				SDL_SetRenderLogicalPresentation( _renderer, requestedSize.x, requestedSize.y, SDL_LOGICAL_PRESENTATION_INTEGER_SCALE );
 
+//				SDL_SetRenderLogicalPresentation( _renderer, 640, 360, SDL_RendererLogicalPresentation::SDL_LOGICAL_PRESENTATION_INTEGER_SCALE );
+			}
+			// HACK: Does not work because ImGui would not work then, it in fact turns this here off :(
+			//SDL_SetHint( SDL_HINT_MOUSE_RELATIVE_SCALING, "1" );
+			//SDL_RenderSetLogicalSize( _renderer, requestedSize.x, requestedSize.y );
+		}
+		_scalingFactor       = scalingFactor;
+		_requestedSizeScaled = toI( toF( requestedSize ) * _scalingFactor );
+
+		const NFD::Result nfdInit = NFD::Init();
+		if( nfdInit != NFD_OKAY )
+		{
+			print( stderr, "Native File Dialog (NFD) could not be initialized: {}\n", NFD::GetError() );
+			exit( 8 );
+		}
+
+		ImGuiOnly( CreateImGui(); )
+
+		// TODO: Maybe remove this from in here
+		CreateWindowEtc();
+	}
+
+	IGame::~IGame() noexcept
+	{
+		DestroyWindowEtc();
+
+		ImGuiOnly( DestroyImGui(); )
+
+		NFD::Quit();
+
+		while( TTF_WasInit() )
+			TTF_Quit();
+
+		constexpr u32 AllInit = 0;
+		if( SDL_WasInit( AllInit ) )
+			SDL_Quit();
+	}
+
+	void IGame::CreateWindowEtc()
+	{
+		_window = SDL_CreateWindow(
+			_windowTitle,
+			_requestedSizeScaled.x,
+			_requestedSizeScaled.y,
+			SDL_WINDOW_OPENGL /*| SDL_WINDOW_HIGH_PIXEL_DENSITY*/ );
 		if( _window == nullptr )
 		{
 			print( stderr, "Window could not be created: {}\n", SDL_GetError() );
@@ -66,46 +112,27 @@ namespace JanSordid::SDL
 
 		SDL_PropertiesID props = SDL_CreateProperties();
 		SDL_SetPointerProperty( props, SDL_PROP_RENDERER_CREATE_WINDOW_POINTER,       _window );
-		SDL_SetNumberProperty(  props, SDL_PROP_RENDERER_CREATE_PRESENT_VSYNC_NUMBER, vSync ? SDL_RENDERER_VSYNC_ADAPTIVE : 0 );
+		SDL_SetNumberProperty(  props, SDL_PROP_RENDERER_CREATE_PRESENT_VSYNC_NUMBER, _vSync  );
 		_renderer = SDL_CreateRendererWithProperties( props );
-
 		if( _renderer == nullptr )
 		{
 			print( stderr, "Renderer could not be created: {}\n", SDL_GetError() );
 			exit( 7 );
 		}
 
-		if( scalingFactor != 1.0f )
+		if( !Mix_OpenAudio( 0, nullptr ) )
 		{
-			// TODO: test if this works as intended
-			const bool isIntegerScaling = (scalingFactor == nearbyintf( scalingFactor ));
-			if( isIntegerScaling )
-			{
-//				SDL_RenderSetIntegerScale( _renderer, true );
-//				SDL_SetRenderLogicalPresentation( _renderer, logicalSize.x, logicalSize.y, SDL_LOGICAL_PRESENTATION_INTEGER_SCALE );
-
-				//SDL_SetRenderLogicalPresentation( _renderer, 640, 360, SDL_RendererLogicalPresentation::SDL_LOGICAL_PRESENTATION_INTEGER_SCALE );
-			}
-			// HACK: Does not work because ImGui would not work then, it in fact turns this here off :(
-			//SDL_SetHint( SDL_HINT_MOUSE_RELATIVE_SCALING, "1" );
-			//SDL_RenderSetLogicalSize( _renderer, logicalSize.x, logicalSize.y );
-		}
-		_scalingFactor = scalingFactor;
-
-		const NFD::Result nfdInit = NFD::Init();
-		if( nfdInit != NFD_OKAY )
-		{
-			print( stderr, "Native File Dialog (NFD) could not be initialized: {}\n", NFD::GetError() );
-			exit( 8 );
+			print( stderr, "Mix_OpenAudio failed: {}\n", SDL_GetError() );
+			exit( 5 );
 		}
 
-		ImGuiOnly( CreateImGui( _renderer, _window ); )
+		ImGuiOnly(
+			ImGui_ImplSDL3_InitForSDLRenderer( _window, _renderer );
+			ImGui_ImplSDLRenderer3_Init( _renderer ); )
 	}
 
-	IGame::~IGame() noexcept
+	void IGame::DestroyWindowEtc()
 	{
-		NFD::Quit();
-
 		if( _renderer != nullptr )
 		{
 			SDL_DestroyRenderer( _renderer );
@@ -117,80 +144,11 @@ namespace JanSordid::SDL
 			SDL_DestroyWindow( _window );
 			_window = nullptr;
 		}
-
-		while( TTF_WasInit() )
-			TTF_Quit();
-
-		constexpr u32 AllInit = 0;
-		if( SDL_WasInit( AllInit ) )
-			SDL_Quit();
 	}
 
-	void IGame::Input()
-	{
-		SDL_PumpEvents();
+#if IMGUI
 
-		if( currentState().Input() )
-			return;
-
-		Event event;
-		while( SDL_PollEvent( &event ) )
-		{
-			// First try if BaseGame wants to handle the input (globals), then pass it to the GameState
-			if( HandleEvent( event ) )
-			{
-				continue;
-			}
-			else
-			{
-				// Returns a bool to tell if the Event was expected and handled, if false, then this return could bubble up to a stacked GameState (future feature)
-				currentState().HandleEvent( event );
-			}
-			// TODO: same as `if !game.HE then curr.HE` ?
-		}
-	}
-
-	void IGame::Update( const f32 deltaT )
-	{
-		currentState().Update( _framesSinceStart, _msSinceStart, deltaT );
-	}
-
-	void IGame::Render( const f32 deltaTNeeded )
-	{
-		const Color clear = currentState().clearColor();
-		SDL_SetRenderDrawColor( _renderer, clear.r, clear.g, clear.b, clear.a );
-		SDL_RenderClear( _renderer );
-
-		// This is placed before the GameState::Render call, to also allow calls to ImGui inside Render (although most ImGui calls should be in RenderUI)
-	#if IMGUI
-		//FPoint oldScale;
-		//SDL_RenderGetScale(_renderer, &oldScale.x, &oldScale.y);
-		//const ImGuiIO & io = ImGui::GetIO();
-		//SDL_SetRenderScale( _renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y );
-		ImGui_ImplSDLRenderer3_NewFrame();
-		ImGui_ImplSDL3_NewFrame();
-		ImGui::NewFrame();
-		//SDL_RenderSetScale( _renderer, oldScale.x, oldScale.y );
-	#endif
-
-		currentState().Render( _framesSinceStart, _msSinceStart, deltaTNeeded );
-
-		ImGuiOnly( RenderUI( deltaTNeeded ); )
-
-		SDL_RenderPresent( _renderer );
-	}
-
-	#if IMGUI
-
-	void IGame::RenderUI( const f32 deltaTNeeded )
-	{
-		currentState().RenderUI( _framesSinceStart, _msSinceStart, deltaTNeeded );
-
-		ImGui::Render();
-		ImGui_ImplSDLRenderer3_RenderDrawData( ImGui::GetDrawData(), _renderer );
-	}
-
-	void IGame::CreateImGui( Renderer * renderer, Window * window )
+	void IGame::CreateImGui()
 	{
 		//SDL_GLContext gl_context = SDL_GL_CreateContext( window );
 		//SDL_GL_MakeCurrent( window, gl_context );
@@ -199,19 +157,20 @@ namespace JanSordid::SDL
 		// Setup Dear ImGui context
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
+		ImPlot::CreateContext();
 		ImGuiIO & io = ImGui::GetIO();
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+		io.Fonts->AddFontDefault();
 
 		// Setup Dear ImGui style
 		ImGui::StyleColorsDark();
 		//ImGui::StyleColorsLight();
 
 		// Setup Platform/Renderer backends
-		ImGui_ImplSDL3_InitForSDLRenderer( window, renderer );
-		ImGui_ImplSDLRenderer3_Init( renderer );
+		//ImGui_ImplSDL3_InitForSDLRenderer( _window, _renderer );
+		//ImGui_ImplSDLRenderer3_Init( _renderer );
 
-		io.Fonts->AddFontDefault();
 		/*
 		// Decide GL+GLSL versions
 	#if defined(IMGUI_IMPL_OPENGL_ES2)
@@ -228,15 +187,127 @@ namespace JanSordid::SDL
 		*/
 	}
 
-	#endif
+	void IGame::DestroyImGui()
+	{
+		ImGui_ImplSDLRenderer3_Shutdown();
+		ImGui_ImplSDL3_Shutdown();
+
+		ImPlot::DestroyContext();
+		ImGui::DestroyContext();
+	}
+
+#endif
+
+	void IGame::Input()
+	{
+		SDL_PumpEvents();
+
+		if( currentState().StatefulInput() )
+			return;
+
+		Event event;
+		while( SDL_PollEvent( &event ) )
+		{
+			// First try if Game wants to handle the input (globals), then pass it to the GameState
+			const bool hasGameHandledEvent = HandleEvent( event );
+			if( !hasGameHandledEvent )
+			{
+				// This call returns a bool to tell if the Event was expected and handled,
+				// TODO: if false, then this return could bubble up to a stacked GameState (future feature)
+				currentState().Input( event );
+			}
+		}
+	}
+
+	void IGame::Update( const f32 deltaT )
+	{
+		currentState().Update( _framesSinceStart, _timeSinceStart, deltaT );
+	}
+
+	void IGame::Render( const f32 deltaTNeeded )
+	{
+#if IMGUI
+		TimePoint startTime = Clock::now();
+#endif
+
+		const Color clear = currentState().clearColor();
+		SDL_SetRenderDrawColor( _renderer, clear.r, clear.g, clear.b, clear.a );
+		SDL_RenderClear( _renderer );
+
+		// This is placed before the GameState::Render call, to also allow calls to ImGui inside Render (although most ImGui calls should be in RenderUI)
+#if IMGUI
+		//FPoint oldScale;
+		//SDL_RenderGetScale(_renderer, &oldScale.x, &oldScale.y);
+		//const ImGuiIO & io = ImGui::GetIO();
+		//SDL_SetRenderScale( _renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y );
+		ImGui_ImplSDLRenderer3_NewFrame();
+		ImGui_ImplSDL3_NewFrame();
+		ImGui::NewFrame();
+		//SDL_RenderSetScale( _renderer, oldScale.x, oldScale.y );
+#endif
+
+		currentState().Render( _framesSinceStart, _timeSinceStart, deltaTNeeded );
+
+#if IMGUI
+		_frameTimesRender[_frameTimesIndex] = duration_cast<FMilliSec>( Clock::now() - startTime ).count();
+#endif
+
+		ImGuiOnly( RenderUI( deltaTNeeded ); )
+
+		SDL_RenderPresent( _renderer );
+	}
+
+#if IMGUI
+
+	void IGame::RenderUI( const f32 deltaTNeeded )
+	{
+		_frameTimesTotal[_frameTimesIndex]    = deltaTNeeded * 1000;
+
+		const uint nextFrameTimeIndex         = (_frameTimesIndex + 1) % _frameTimesTotal.size();
+		_frameTimesTotal[nextFrameTimeIndex]  = NAN;
+		_frameTimesUpdate[nextFrameTimeIndex] = NAN;
+		_frameTimesRender[nextFrameTimeIndex] = NAN;
+		_frameTimesDeltaT[nextFrameTimeIndex] = NAN;
+
+		if( _isFrameTimeRecording )
+		{
+			_frameTimesIndex = nextFrameTimeIndex;
+		}
+
+		if( _isFrameTimeVisible )
+		{
+			ImGui::Begin( "Frametime", 0, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | /*ImGuiWindowFlags_NoSavedSettings |*/ ImGuiWindowFlags_NoFocusOnAppearing );
+			//			ImGui::PlotLines( "##Frame Times", _frameTimes.data(), (int)_frameTimes.size(), 0, nullptr, 0, 20, ImVec2{ (f32)_frameTimes.size()*2, 140 } );
+			//			ImPlot::SetNextAxesToFit();
+			ImPlot::SetNextAxesLimits( 0, (f64)_frameTimesTotal.size(), 0.1, 20, ImPlotCond_Once );
+			if( ImPlot::BeginPlot( "##Frame Times Plot", ImVec2{ (f32)_frameTimesTotal.size() * 2, 120 }, ImPlotFlags_NoInputs | ImPlotFlags_NoFrame | ImPlotFlags_NoChild | ImPlotFlags_NoTitle | ImPlotFlags_NoLegend | ImPlotFlags_NoMenus | ImPlotFlags_NoBoxSelect ) )
+			{
+				ImPlot::SetupAxisScale( ImAxis_Y1, ImPlotScale_SymLog );
+				ImPlot::PlotLine( "Total",  _frameTimesTotal.data(),  (int)_frameTimesTotal.size() );
+				ImPlot::PlotLine( "Update", _frameTimesUpdate.data(), (int)_frameTimesUpdate.size() );
+				ImPlot::PlotLine( "Render", _frameTimesRender.data(), (int)_frameTimesRender.size() );
+				ImPlot::PlotLine( "DeltaT", _frameTimesDeltaT.data(), (int)_frameTimesDeltaT.size() );
+				//ImPlot::PlotLine( "My Line Plot", x_data, y_data, 1000 );
+				ImPlot::EndPlot();
+			}
+			ImGui::End();
+		}
+
+		currentState().RenderUI( _framesSinceStart, _timeSinceStart, deltaTNeeded );
+
+		ImGui::Render();
+		ImGui_ImplSDLRenderer3_RenderDrawData( ImGui::GetDrawData(), _renderer );
+	}
+
+#endif
 
 	// Returns if the event has been handled
 	bool IGame::HandleEvent( const Event & event )
 	{
-	#ifdef IMGUI
+#ifdef IMGUI
 		const ImGuiIO & io = ImGui::GetIO();
 		ImGui_ImplSDL3_ProcessEvent( &event );
-	#endif
+#endif
 
 		switch( event.type )
 		{
@@ -247,21 +318,32 @@ namespace JanSordid::SDL
 
 			case SDL_EVENT_KEY_DOWN:
 			{
-				const auto & key_event = event.key;
+				const auto & what_key = event.key;
 
-				if( (key_event.mod & SDL_KMOD_ALT) &&
-				    (key_event.scancode == SDL_SCANCODE_F4) )
+				if( (what_key.mod & SDL_KMOD_ALT) &&
+				    (what_key.scancode == SDL_SCANCODE_F4) )
 				{
 					Event next_event = { .type = SDL_EVENT_QUIT };
 					SDL_PushEvent( &next_event );
 					return true;
 				}
-	#ifdef IMGUI
+#ifdef IMGUI
+				else if( what_key.scancode == SDL_SCANCODE_F11 && !event.key.repeat )
+				{
+					//         F11 -> toggle display of frame time graph
+					// Shift + F11 -> toggle recoding of frame time
+					if( what_key.mod & SDL_KMOD_SHIFT )
+						_isFrameTimeRecording = !_isFrameTimeRecording;
+					else
+						_isFrameTimeVisible = !_isFrameTimeVisible;
+
+					return true;
+				}
 				else if( io.WantCaptureKeyboard )
 				{
 					return true;
 				}
-	#endif
+#endif
 				break;
 			}
 
@@ -287,25 +369,25 @@ namespace JanSordid::SDL
 
 	int IGame::Run()
 	{
-		Duration  deltaTDur       = Duration::zero();
-		Duration  deltaTDurNeeded = Duration::zero();   // How much time was really necessary
-		TimePoint start;
+		Duration deltaTDur       = {};
+		Duration deltaTDurNeeded = {};   // How much time was really necessary
 
 		while( isRunning() )
 		{
-			start = Clock::now();
+			const TimePoint start = Clock::now();
 
-			      f32 deltaT       = std::chrono::duration<float>( deltaTDur       ).count();
-			const f32 deltaTNeeded = std::chrono::duration<float>( deltaTDurNeeded ).count();
+			      f32 deltaT       = duration_cast<FSec>( deltaTDur       ).count();
+			const f32 deltaTNeeded = duration_cast<FSec>( deltaTDurNeeded ).count();
 
-			// TODO: Make it possible to opt out / configure this
+			// TODO: Make it possible to opt out and configure this
 			constexpr f32 fpsLimit    = 30.0f;           // slowest frame rate in frames per second
 			constexpr f32 deltaTLimit = 1.0f / fpsLimit; // slowest frame rate in delta time
 			if( deltaT > deltaTLimit ) [[unlikely]]
 			{
 				IfNotFinal
-					print( stderr, "Less than {} fps ({:.4}ms per frame), actually {:.4}ms, game will progress slower than realtime to stay consistent.\n",
-					       fpsLimit, deltaTLimit * 1000.0f, deltaT * 1000.0f );
+					print( stderr,
+						"Less than {} fps ({:.4}ms per frame), actually {:.4}ms, game will progress slower than realtime to stay consistent.\n",
+					    fpsLimit, deltaTLimit * 1000.0f, deltaT * 1000.0f );
 
 				deltaT = deltaTLimit;
 			}
@@ -315,14 +397,26 @@ namespace JanSordid::SDL
 			ChangeState();
 			SDL_assert( currentStateIndex() >= 0 );
 
-			// The difference to last frame is usually 16-17 at 60Hz, 10 at 100Hz, 8-9 at 120Hz, 6-*7* at 144Hz
-			_msSinceStart = SDL_GetTicks();
+			// The difference to last frame is usually
+			//  33'333'333ns at 30Hz,
+			//  16'666'666ns at 60Hz,
+			//  10'000'000ns at 100Hz,
+			//   8'333'333ns at 120Hz,
+			//   6'944'444ns at 144Hz...
+			_timeSinceStart = NanoSec{ SDL_GetTicksNS() };
 
 			// Main loop trinity
 			{
 				Input();
 
+#if IMGUI
+				TimePoint startUpdate = Clock::now();
+#endif
 				Update( deltaT );
+#if IMGUI
+				_frameTimesDeltaT[_frameTimesIndex] = deltaT * 1000;
+				_frameTimesUpdate[_frameTimesIndex] = duration_cast<FMilliSec>( Clock::now() - startUpdate ).count();
+#endif
 
 				Render( deltaTNeeded );
 			}
@@ -332,16 +426,16 @@ namespace JanSordid::SDL
 			// With VSync this should not be needed and only Delay( 0 );
 			if( currentState().isFPSLimited() )
 			{
-				using namespace std::chrono_literals;
+				//using namespace ChronoLiterals;
 
 				const Duration dur = std::max( Duration::zero(), 16ms - deltaTDurNeeded );
-				const u32 ms = static_cast<u32>( std::chrono::duration_cast<std::chrono::milliseconds>( dur ).count() );
-				if( ms > 0 )
+				if( dur > 1ns )
 				{
+					const i64 ns = duration_cast<NanoSec>( dur ).count();
 					//print( "need to sleep {}\n", ms );
+					// TODO: Change towards SDL_DelayPrecise if precision is paramount
+					SDL_DelayNS( ns );
 				}
-				// TODO: Change towards SDL_DelayNS (or SDL_DelayPrecise only if precision is paramount)
-				SDL_Delay( ms );
 				deltaTDur = Clock::now() - start;
 			}
 			else
@@ -357,7 +451,7 @@ namespace JanSordid::SDL
 	float IGame::AverageMSecPerFrame() const
 	{
 		const u64 passedFrames = _framesSinceStart - _lastPerfInfoFrame + 1;
-		return std::chrono::duration<float>( _accumulatedNeeded / passedFrames ).count() * 1000.0f;
+		return duration_cast<FMilliSec>( _accumulatedNeeded / passedFrames ).count();
 	}
 
 	void IGame::ResetPerformanceInfo( const TimePoint current )
@@ -369,7 +463,7 @@ namespace JanSordid::SDL
 
 	void IGame::OutputPerformanceInfo( const TimePoint current, const Duration needed )
 	{
-		using namespace ChronoLiterals;
+		//using namespace ChronoLiterals;
 
 		_accumulatedNeeded += needed;
 

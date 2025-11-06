@@ -56,8 +56,9 @@ namespace JanSordid::SDL_Example
 		bool   _isPanning    = false;
 		bool   _showGrid     = false;
 
-		constexpr const static u64 UpdateDeltaTimeMS = 100;
-		u64   _nextUpdateTimeMS = 0;
+		constexpr static Duration UpdateDeltaTime = 100ms;
+
+		Duration _nextUpdateTime = {};
 
 	public:
 		// ctor
@@ -66,9 +67,9 @@ namespace JanSordid::SDL_Example
 		void Init() override;
 		void Destroy() override;
 
-		bool HandleEvent( const Event & event ) override;
-		void Update( u64 framesSinceStart, u64 msSinceStart, f32 deltaT ) override;
-		void Render( u64 framesSinceStart, u64 msSinceStart, f32 deltaTNeeded ) override;
+		bool Input( const Event & event ) override;
+		void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT       ) override;
+		void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
 
 		constexpr Color clearColor() const noexcept override { return HSNR64::Palette( HSNR64::NamedColor::Grey40 ); }
 	};

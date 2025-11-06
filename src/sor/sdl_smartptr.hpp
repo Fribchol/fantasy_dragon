@@ -4,7 +4,7 @@
 
 #include "sdl_core.hpp"
 
-// It is allowed to specialize std classes, but this might be UB?!
+// Care: It is allowed to specialize std classes, but this might be UB?!
 namespace std
 {
 #define IMPLEMENT_DEFAULT_DELETE( CLASS, DELETE_FUNC )                                       \
@@ -30,6 +30,23 @@ namespace std
 
 #undef IMPLEMENT_DEFAULT_DELETE
 }
+
+/*
+template<typename T>
+struct DefaultDeleter {
+	using type = std::default_delete<T>;
+};
+template<> struct DefaultDeleter<SDL_Texture> {
+	using type = SDLDeleter<SDL_Texture>;
+};
+template<> struct DefaultDeleter<SDL_Renderer> {
+	using type = SDLDeleter<SDL_Renderer>;
+};
+// ... etc
+
+template<typename T>
+using Owned = AutocastUnique<T, typename DefaultDeleter<T>::type>;
+*/
 
 namespace JanSordid::Core
 {

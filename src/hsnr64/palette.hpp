@@ -7,9 +7,10 @@ namespace JanSordid::HSNR64
 {
 	using namespace JanSordid::SDL;
 
-	enum class NamedColor : u8 {
+	enum class NamedColor : u8
+	{
 		Transparent = 0,// In reality this is pink or cyan, but when used as index, the framework will treat it as transparent
-		Black = 1,      // Not totally black
+		Black = 1,      // Not totally black (should it be?)
 		Grey10,         // Charcoal,
 		Grey20,         // MidnightBlue,
 		Grey30,         // SteelBlue,
@@ -35,12 +36,23 @@ namespace JanSordid::HSNR64
 		DarkForest,
 		Teal = 37,
 
-		// TODO: Continue this named color list when feeling creative
+		// TODO: Continue the named color list above when feeling creative
+
+		/// To use Alpha0 use the Color named "Transparent" at Index 0
+		Alpha25  = 0b0000'0000, // This is kind of used by default... maybe Alpha100 would make more sense by default?
+		Alpha50  = 0b0100'0000,
+		Alpha75  = 0b1000'0000,
+		Alpha100 = 0b1100'0000,
+		Opaque   = Alpha100,
+
+		ColorMask = 0b0011'1111,
+		AlphaMask = 0b1100'0000,
+		AlphaFill = 0b0011'1111,
 	};
 
 	// Color[64]
-	// var Color[NamedColorIndex, 64]
-	constexpr const static inline Array<Color, 64> palette = {
+	// Idea for Myll, typed indexer: var Color[NamedColor, 64]
+	constexpr static inline Core::Array<Color, 64> palette = {
 		Color{  255,  0,    255, SDL_ALPHA_OPAQUE /*SDL_ALPHA_TRANSPARENT*/ },   // this is the don't-draw-pink
 	//	Color{  0,    255,  255, SDL_ALPHA_TRANSPARENT },   // this is the don't-draw-cyan
 		Color{  1,    7,    10,  SDL_ALPHA_OPAQUE },    // Black
@@ -106,6 +118,11 @@ namespace JanSordid::HSNR64
 		Color{  164,  133,  85,  SDL_ALPHA_OPAQUE },
 		Color{  200,  175,  129, SDL_ALPHA_OPAQUE },
 		Color{  253,  214,  177, SDL_ALPHA_OPAQUE },
+	};
+
+	static constexpr bool ColorNeedsLinebreak( int i ) noexcept
+	{
+		return i == 10 || i == 25 || i == 40 || i == 52;
 	};
 
 	constexpr const Color & Palette( NamedColor index )

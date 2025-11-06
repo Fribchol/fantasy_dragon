@@ -10,6 +10,7 @@ namespace JanSordid::SDL_Example
 		i8     nextPath;
 		i8     faction;
 		i8     health;
+		i8     direction;
 	};
 
 	class RoflState final : public MyGameState
@@ -40,14 +41,14 @@ namespace JanSordid::SDL_Example
 			{ '7',  { { 0,  26 }, { 0,   0,   0,   255 }, false, false, 0, -1 } },
 			{ '8',  { { 0,  26 }, { 0,   0,   0,   255 }, false, false, 0, -1 } },
 			{ '9',  { { 0,  26 }, { 0,   0,   0,   255 }, false, false, 0, -1 } },
-			{ 'u',  { { 16, 39 }, { 127, 127, 127, 255 }, true,  true, 0, -1 } },
+			{ 'u',  { { 16, 39 }, { 127, 127, 127, 255 }, true,  true, 0, -1 } },   // Outer Walls ++
 			{ 'U',  { { 17, 39 }, { 127, 127, 127, 255 }, true,  true, 0, -1 } },
 			{ 'r',  { { 18, 39 }, { 127, 127, 127, 255 }, true,  true, 0, -1 } },
 			{ 'R',  { { 18, 40 }, { 127, 127, 127, 255 }, true,  true, 0, -1 } },
 			{ 'd',  { { 18, 41 }, { 127, 127, 127, 255 }, true,  true, 0, -1 } },
 			{ 'D',  { { 17, 41 }, { 127, 127, 127, 255 }, true,  true, 0, -1 } },
 			{ 'l',  { { 16, 41 }, { 127, 127, 127, 255 }, true,  true, 0, -1 } },
-			{ 'L',  { { 16, 40 }, { 127, 127, 127, 255 }, true,  true, 0, -1 } },
+			{ 'L',  { { 16, 40 }, { 127, 127, 127, 255 }, true,  true, 0, -1 } },   // Outer Walls --
 			{ 'X',  { { 19, 27 }, { 127, 127, 127, 255 }, true,  true, 0, -1 } },   // Destroyed tower
 			{ '-',  { { 1,  29 }, { 156, 107, 48,  255 }, true,  true, 0, -1 } },
 			{ '|',  { { 1,  29 }, { 156, 107, 48,  255 }, true,  true, -90, -1 } },
@@ -58,39 +59,44 @@ namespace JanSordid::SDL_Example
 			{ 'a',  { { 2,  27 }, { 53,  104, 45,  255 }, true,  true, 0, -1 } },
 			{ 'A',  { { 3,  27 }, { 53,  104, 45,  255 }, true,  true, 0, -1 } },
 			{ 'G',  { { 1,  26 }, { 129, 183, 26,  255 }, false, true, 0, -1 } },
+			{ 'B',  { { 6,  30 }, { 127, 96,  32,  255 }, false, false, 0, -1 } }, // Bridge
+			{ 'b',  { { 8,  27 }, { 0,   0,   127, 255 }, false, false, 0, -1 } }, // River
 		};
 
-		static constexpr const Array<Color, 2> factionColors = {{
+		static constexpr Array<Color, 2> factionColors = {{
 			{ 255, 136, 0,   255 },
 			{ 137, 207, 240, 255 },
 		}};
 
 		Owned<Texture>              _tileset;
-		Array<Array<FPoint, 10>, 2> _paths;     // forward for faction 0, backward for faction 1
+		Array<Array<FPoint, 10>, 2> _paths; // forward for faction 0, backward for faction 1
 		Array<DynArray<Entity>, 2>  _minions;
-		u64                         _respawnCD = 0;
+		Duration                    _respawnCD         = {};
+		Duration                    _explosionDeadline = {};
+		FPoint                      _explosionPosition;
+		bool                        _isPathRendered    = false;
 		// Minions follow path from 0 to 9 or the opposite way around
 		DynArray<String> _level = {
 			"uUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUr",
-			"L        |      GGG                    R",
-			"L  f0    |     AA        aa AA         R",
-			"L        |    AAAA                     R",
-			"L        |     GG a               6    R",
-			"L             AA                       R",
-			"L------- 1    aa      5      Aa        R",
-			"L             aA            AA         R",
-			"La     t     AA            GG         aR",
-			"LA           Aa           aAA        aAR",
-			"La       2  AA            AA  7       aR",
-			"LAa        AAa           aA           AR",
-			"La         GG            AA     T     aR",
-			"L         AA            Aa             R",
-			"L        aA      4      aa    8 -------R",
-			"L                       AA             R",
-			"L    3               a GG     |        R",
-			"L                     AAAA    |        R",
-			"L         AA aa        AA     |    9F  R",
-			"L                    GGG      |        R",
+			"L        |      GGG   b                R",
+			"L  f0    |     AA     b  aa AA         R",
+			"L        |    AAAA    b           6    R",
+			"L        |     GG a  b                 R",
+			"L             AA    b                  R",
+			"L------- 1    aa   b  5      Aa        R",
+			"L             aA   b   T    AA         R",
+			"La     t     AA    b       GG         aR",
+			"LA           Aa    b      aAA        aAR",
+			"La       2  AA     BB     AA  7       aR",
+			"LAa        AAa      b    aA           AR",
+			"La         GG       b    AA     T     aR",
+			"L         AA    t   b   Aa             R",
+			"L        aA      4  b   aa    8 -------R",
+			"L                  b    AA             R",
+			"L                 b  a GG     |        R",
+			"L    3           b    AAAA    |        R",
+			"L         AA aa  b     AA     |    9F  R",
+			"L                b   GGG      |        R",
 			"lDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDd",
 		};
 
@@ -101,10 +107,11 @@ namespace JanSordid::SDL_Example
 		void Init() override;
 		void Destroy() override;
 
-		bool HandleEvent( const Event & event ) override;
-		void Update( u64 framesSinceStart, u64 msSinceStart, f32 deltaT ) override;
-		void Render( u64 framesSinceStart, u64 msSinceStart, f32 deltaTNeeded ) override;
+		bool Input( const Event & event ) override;
+		void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT       ) override;
+		void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
 
 		Color clearColor() const noexcept override { return Color{ 0, 32, 0, 255 }; }
+		bool isFPSLimited() const noexcept override { return false; }
 	};
 }

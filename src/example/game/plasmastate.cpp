@@ -33,7 +33,7 @@ namespace JanSordid::SDL_Example
 		Base::Destroy();
 	}
 
-	bool PlasmaState::HandleEvent( const Event & event )
+	bool PlasmaState::Input( const Event & event )
 	{
 		switch( event.type )
 		{
@@ -45,7 +45,7 @@ namespace JanSordid::SDL_Example
 		return false;
 	}
 
-	bool PlasmaState::Input()
+	bool PlasmaState::StatefulInput()
 	{
 		// Is not supressed during ImGui input
 		const bool * key_array = SDL_GetKeyboardState( nullptr );
@@ -74,7 +74,7 @@ namespace JanSordid::SDL_Example
 		return v;
 	}
 
-	void PlasmaState::Update( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaT )
+	void PlasmaState::Update( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaT )
 	{
 		u8 *        px       = (u8 *)_plasmaSrf->pixels;
 		const int   pitch    = _plasmaSrf->pitch;
@@ -98,12 +98,12 @@ namespace JanSordid::SDL_Example
 		}
 	}
 
-	void PlasmaState::Render( const u64 framesSinceStart, const u64 msSinceStart, const f32 deltaTNeeded )
+	void PlasmaState::Render( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaTNeeded )
 	{
 		// Draw the plasma
 		{
 			SDL_UpdateTexture( _plasmaTex, EntireRect, _plasmaSrf->pixels, _plasmaSrf->pitch );
-			const FRect dst_rect { 0, 0, (f32)_plasmaSrf->w * Scale, (f32)_plasmaSrf->h * Scale };
+			const FRect dst_rect = { 0, 0, (f32)_plasmaSrf->w * Scale, (f32)_plasmaSrf->h * Scale };
 			SDL_RenderTexture( renderer(), _plasmaTex, EntireFRect, &dst_rect );
 		}
 
@@ -123,7 +123,7 @@ namespace JanSordid::SDL_Example
 			if( _blendedText != nullptr )
 				SDL_DestroyTexture( _blendedText );
 
-			Owned<Surface> surf = TTF_RenderText_Blended_Wrapped( _font, text, 0, White, windowSize.x - 2 * offsetFromLeft );
+			Owned<Surface> surf = TTF_RenderText_Blended_Wrapped( _font, text, 0, White, windowSize.x - 2 * (int)offsetFromLeft );
 			_blendedText = SDL_CreateTextureFromSurface( renderer(), surf );
 
 			SDL_GetTextureSize( _blendedText, &_blendedTextSize.x, &_blendedTextSize.y );
@@ -133,7 +133,7 @@ namespace JanSordid::SDL_Example
 		{
 			const FPoint p = {
 				offsetFromLeft,
-				windowSize.y - (100 * _game.scalingFactor())
+				(f32)windowSize.y - (100 * _game.scalingFactor())
 			};
 
 			const f32 shadowOffsetFactor = (1.0f*_game.scalingFactor());

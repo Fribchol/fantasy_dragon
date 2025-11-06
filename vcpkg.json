@@ -19,6 +19,10 @@
       "version>=": "3.2.2",
       "$features": [ "harfbuzz" ]
     }, {
+      "name" : "tgui",
+      "version>=" : "1.8.0#0",
+      "features": ["sdl2","sdl3","tool"]
+    },{
       "name": "fmt",
       "version>=": "11.0.2#1"
     }, {
@@ -35,8 +39,17 @@
       "version>=": "1.91.0",
       "features": [ "sdl3-binding", "sdl3-renderer-binding", "freetype", "docking-experimental" ]
     }, {
+      "name": "implot",
+      "version>=": "0.16"
+    }, {
       "name": "nlohmann-json",
       "version>=": "3.11.3#1"
+    }
+  ],
+  "overrides": [
+    {
+      "name": "tgui",
+      "version": "1.8.0#0"
     }
   ]
 }
