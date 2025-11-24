@@ -59,9 +59,9 @@ namespace JanSordid::HSNR64
 
 		constexpr Point tileSize = { 16, 16 };
 		constexpr u16   stride   = 32; // How many per row
-		const     u16   idx      = curr_tile.index();
-		const     Point idx2d    = { (idx % stride), (idx / stride) };
-		const     FRect src      = toF( toXY( idx2d, tileSize.x ) * tileSize );
+		const     u16   index    = curr_tile.index();
+		const     Point sel      = Point{ (index % stride), (index / stride) } * tileSize;
+		const     FRect src      = toF( toRect( sel, tileSize ) ); // toF( toXY( idx2d, tileSize.x ) * tileSize );
 		const     f64   angle    = !(curr_tile.flipRot & FlipRot::Rotate45) * 45
 		                         + !(curr_tile.flipRot & FlipRot::Rotate90) * 90;
 		const SDL_FlipMode flip  = (SDL_FlipMode)(!(curr_tile.flipRot & FlipRot::HorizontalFlip) * SDL_FlipMode::SDL_FLIP_HORIZONTAL

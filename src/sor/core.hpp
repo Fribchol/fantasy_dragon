@@ -151,8 +151,8 @@ namespace JanSordid::Core//::inline V1
 
 	// Chrono Functions
 	using Chrono::duration_cast;
-	using ChronoLiterals::operator ""ns;
-	using ChronoLiterals::operator ""ms,
+	using ChronoLiterals::operator ""ns,
+	      ChronoLiterals::operator ""ms,
 	      ChronoLiterals::operator ""s;
 
 	// Functions

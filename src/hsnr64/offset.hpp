@@ -22,7 +22,7 @@ namespace JanSordid::HSNR64
 		 *   x x
 		 *    x
 		 */
-		static constexpr const Array<FPoint, 8> Rhombus = {
+		static constexpr Array<FPoint, 8> Rhombus = {
 			//*
 			FPoint { -1, -1 },
 			FPoint { +1, -1 },
@@ -53,7 +53,7 @@ namespace JanSordid::HSNR64
 		 *   xxx
 		 */
 
-		static constexpr const Array<FPoint, 8> Square = {
+		static constexpr Array<FPoint, 8> Square = {
 			//*
 			FPoint { -1, -1 },
 			FPoint { +1, -1 },
@@ -83,7 +83,7 @@ namespace JanSordid::HSNR64
 		 *    x
 		 */
 
-		static constexpr const Array<FPoint, 4> Plus = {
+		static constexpr Array<FPoint, 4> Plus = {
 			//*
 			FPoint { +0, +1 },
 			FPoint { +1, +0 },
@@ -104,7 +104,7 @@ namespace JanSordid::HSNR64
 		 *    o
 		 *   x x
 		 */
-		static constexpr const Array<FPoint, 4> Cross = {
+		static constexpr Array<FPoint, 4> Cross = {
 			//*
 			FPoint { -1, -1 },
 			FPoint { +1, -1 },
