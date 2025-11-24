@@ -141,17 +141,21 @@ namespace JanSordid::SDL_Example
 		return flipRot;
 	}
 
-	void MapEditorState::SetTile( const u8 layer, const Point tileIndex, const u8 color, const u8 alpha, const FlipRot flipRot, const u16 paletteIndex )
+	void MapEditorState::SetTile( const u8 layer, const Point tileIndex, const i8 color, const i8 alpha, const FlipRot flipRot, const u16 paletteIndex )
 	{
-		assertCE( color <= 63 && "Color is only capable of storing 6 bits" );
-		assertCE( alpha <=  3 && "Alpha is only capable of storing 2 bits" );
+		Assert( -1 <= color && color <= 63 && "Color is only capable of storing 6 bits or staying the same on -1" );
+		Assert( -1 <= alpha && alpha <=  3 && "Alpha is only capable of storing 2 bits or staying the same on -1" );
 
 		TileMap & tileMap = _tileMaps[layer];
 		const u16 index1d = tileIndex.x + tileIndex.y * tileMap.size.x;
 		Tile    & modTile = tileMap.tiles[index1d];
 
-		modTile.color   = color;
-		modTile.alpha   = alpha;
+		if( color >= 0 )
+			modTile.color = color;
+
+		if( alpha >= 0 )
+			modTile.alpha = alpha;
+
 		modTile.flipRot = flipRot;
 		modTile.index1  = paletteIndex;
 	}
@@ -430,8 +434,8 @@ namespace JanSordid::SDL_Example
 			SDL_SetTextureColorMod( _tileSet.texture, 255, 255, 255 );
 			SDL_SetTextureAlphaMod( _tileSet.texture, SDL_ALPHA_OPAQUE );
 
-			const float  spacing   = 2.f;
-			const Point  modOffset = { windowSize.x - 512 + 16, 16 };
+			const f32    spacing   = 2.f;
+			const FPoint modOffset = { (f32)(windowSize.x - 512 + 16), 16 };
 
 			if( _selectedIndex != 0 )
 			{
@@ -440,7 +444,7 @@ namespace JanSordid::SDL_Example
 				//if(!isBright)
 				{
 					const Color compColor = { (u8)(color.r ^ 0x80), (u8)(color.g ^ 0x80), (u8)(color.b ^ 0x80), SDL_ALPHA_OPAQUE };
-					const FRect dst = toF( modOffset ) + FRect { -16, -16, 512, 128 };
+					const FRect dst       = modOffset + FRect { -16, -16, 512, 128 };
 					SDL_SetRenderDrawColor( renderer(), compColor.r, compColor.g, compColor.b, compColor.a );
 					//SDL_SetRenderDrawColor( renderer(), 180, 180, 180, SDL_ALPHA_OPAQUE );
 					SDL_RenderFillRect( renderer(), &dst );
@@ -450,8 +454,9 @@ namespace JanSordid::SDL_Example
 				{
 					for( int x = 0; x <= 7; ++x )
 					{
-						const Point   sel      = { x, y };
-						const FRect   dst      = toF( sel ) * paletteTileSize * spacing + toF( modOffset ) + toWH( paletteTileSize );
+						const FPoint  sel       = { (f32)x, (f32)y };
+						const FPoint  selScaled = sel * paletteTileSize * spacing;
+						const FRect   dst      = toFRect( selScaled + modOffset, paletteTileSize );
 						const FlipRot flipRot  = FlipRot::None
 						                       | (((x & 1) != 0) ? HSNR64::FlipRot::HorizontalFlip : HSNR64::FlipRot::None)
 						                       | (((x & 2) != 0) ? HSNR64::FlipRot::VerticalFlip   : HSNR64::FlipRot::None)
@@ -469,7 +474,7 @@ namespace JanSordid::SDL_Example
 			_selectedMod         = _selectedFlip | _selectedRotation << 2;
 			constexpr int stride = 8;
 			const Point   sel    = { _selectedMod % stride, _selectedMod / stride };
-			const FRect   dst    = toF( sel * _tileSet.tileSize ) * _paletteScale * spacing + toF( modOffset ) + selectorOverhang;
+			const FRect   dst    = toF( sel * _tileSet.tileSize ) * _paletteScale * spacing + modOffset + selectorOverhang;
 
 			// Draw Mod Cursor
 			DrawTile( renderer(), _tileSet.texture, selectorTile, sentinelTile, dst, {} );

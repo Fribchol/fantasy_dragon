@@ -339,7 +339,7 @@ namespace JanSordid::SDL_Example
 				if( !IsProjectileAlive( it ) )
 					continue;
 
-				const Point index      = IndexUnpackClamped<10, 6>( framesSinceStart + p.y );
+				const Point index      = IndexUnpackClamped<10, 6>( framesSinceStart + (u64)p.y );
 				const FRect srcIndexed = toF( src * index );
 				const FRect pos        = {
 					(p.x + fluxCam.x) - pivot.x / 2,

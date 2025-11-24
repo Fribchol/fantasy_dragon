@@ -42,9 +42,9 @@ namespace JanSordid::SDL_Example
 		bool    _isCtrlHeld      = false;
 
 	public:
-		using PerTileCallback = Tile( const Point pos, const Point size );
+		using PerTileCallback = Tile( Point pos, Point size );
 
-		static lambda uniformTile( const TileColor color, const FlipRot flipRot, const u16 index );
+		static lambda          uniformTile( TileColor color, FlipRot flipRot, u16 index );
 		static PerTileCallback emptyTile;
 		static PerTileCallback randomTile;
 		static PerTileCallback randomSolidTile;
@@ -56,17 +56,17 @@ namespace JanSordid::SDL_Example
 		void Destroy() override;
 
 		template <typename TCallback>
-		void FillLayer( const u8 layer, TCallback       callback );
-		void FillLayer( const u8 layer, PerTileCallback callback = randomSolidTile );
-		void SetTile( const u8 layer, const Point tileIndex, const u8 color, const u8 alpha, const FlipRot flipRot, const u16 paletteIndex );
+		void FillLayer( u8 layer, TCallback       callback );
+		void FillLayer( u8 layer, PerTileCallback callback = randomSolidTile );
+		void SetTile( u8 layer, Point tileIndex, i8 color, i8 alpha, FlipRot flipRot, u16 paletteIndex );
 
 		template <typename E>
 		void HandleSpecificEvent( const E & ev );
 		bool Input( const Event & event ) override;
-		void Update( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaT ) override;
-		void Render( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaTNeeded ) override;
+		void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT ) override;
+		void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
 		ImGuiOnly(
-			void RenderUI( const u64 framesSinceStart, const Duration timeSinceStart, const f32 deltaTNeeded ) override;
+			void RenderUI( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
 		)
 
 		void SaveMap() const;
