@@ -12,13 +12,6 @@
       "kind": "artifact",
       "location": "https://github.com/microsoft/vcpkg-ce-catalog/archive/refs/heads/main.zip",
       "name": "microsoft"
-    },
-    {
-      "kind": "git",
-      "repository": "https://github.com/sor/vcpkg",
-      "reference": "sdl3-mixer",
-      "baseline": "1cdfaa8ace7094bbcbe4df0c36852ab7db1e9d85",
-      "packages": [ "sdl3-mixer" ]
     }
   ]
 }

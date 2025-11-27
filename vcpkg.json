@@ -11,7 +11,7 @@
       "features": [ "jpeg", "png" ]
     }, {
       "name": "sdl3-mixer",
-      "version>=": "3.0.1-f486b4c",
+      "version>=": "3.0.2",
       "features": [ "mpg123", "opusfile" ],
       "$features": [ "libflac" ]
     }, {
