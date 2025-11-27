@@ -3,8 +3,6 @@
   "version": "0.1.2",
   "dependencies": [
     {
-      "name": "libgme"
-    }, {
       "name": "sdl3",
       "version>=": "3.2.20"
     }, {

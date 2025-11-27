@@ -79,7 +79,7 @@ void mutateWorldState( WorldState & ws )
 
 	using namespace JanSordid::SDL;
 	constexpr float dt = 0.01666f;
-	ws.ball += ws.vel_ball * dt;
+	ws.ball += toXY( ws.vel_ball * dt );
 
 	if( ws.ball.x < 0 )
 	{
