@@ -32,6 +32,6 @@
   - **S** gedrückt halten → herunterklettern
 
 ## Aufgaben
-Patrick Level Editor
-Nadine Steuerung und Hitboxen
-Marcus Magiesystem
+  - Patrick Level Editor
+  - Nadine Steuerung und Hitboxen
+  - Marcus Magiesystem
