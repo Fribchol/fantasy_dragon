@@ -7,7 +7,8 @@
 #include <array>
 #include <string>
 #include <sstream>
-#include <memory> // WICHTIG für std::unique_ptr
+#include <memory>
+#include <cstdint> // WICHTIG für uint8_t
 
 // Fallback Pfade
 #ifndef BasePathFont
@@ -25,24 +26,20 @@
 namespace JanSordid::SDL_Example
 {
     // =========================================================
-    // REPARATUR-BLOCK: Typen manuell definieren
+    // Typ-Definitionen (REPARATUR: u8 explizit definieren)
     // =========================================================
     using namespace std::chrono_literals;
 
-    // KORREKTUR: Wir definieren Owned selbst, da es in Core fehlt
-    template <typename T>
-    using Owned = std::unique_ptr<T>;
+    template <typename T> using Owned = std::unique_ptr<T>;
+    template <typename T, std::size_t N> using Array = std::array<T, N>;
 
-    // Array definieren
-    template <typename T, std::size_t N>
-    using Array = std::array<T, N>;
-
+    // HIER WAR DER FEHLER: Wir definieren u8 jetzt ganz sicher!
+    using u8  = std::uint8_t;
     using i32 = int;
     using f32 = float;
     using u64 = unsigned long long;
     using Duration = std::chrono::nanoseconds;
 
-    // SDL Typen importieren
     using JanSordid::SDL::Color;
     using JanSordid::SDL::Font;
     using JanSordid::SDL::Texture;
@@ -53,35 +50,40 @@ namespace JanSordid::SDL_Example
 
     using EditorGameBase = JanSordid::SDL::Game<>;
 
-    // =========================================================
+    // IDs für alle Zustände im Spiel
+    enum class GameStateID : std::uint8_t {
+        MainMenu = 0,
+        Editor,
+        Settings,
+        Game
+    };
 
+    // Globale Settings
+    struct GlobalSettings {
+        static bool soundEnabled;
+        static bool isFullscreen;
+    };
+
+    // =========================================================
+    // KLASSE: Editor (Der Map Creator)
+    // =========================================================
     class EditorState : public JanSordid::SDL::GameState<EditorGameBase>
     {
         using Base = JanSordid::SDL::GameState<EditorGameBase>;
 
         constexpr static Array<Color,8> BaseColors = {
-            Color{ 0,   0,   0,   255 },
-            Color{ 255, 0,   0,   255 },
-            Color{ 0,   255, 0,   255 },
-            Color{ 255, 255, 0,   255 },
-            Color{ 0,   0,   255, 255 },
-            Color{ 255, 0,   255, 255 },
-            Color{ 0,   255, 255, 255 },
-            Color{ 255, 255, 255, 255 },
+            Color{ 0,0,0,255 }, Color{ 255,0,0,255 }, Color{ 0,255,0,255 }, Color{ 255,255,0,255 },
+            Color{ 0,0,255,255 }, Color{ 255,0,255,255 }, Color{ 0,255,255,255 }, Color{ 255,255,255,255 },
         };
 
         Owned<Font>    _font;
         Owned<Texture> _tileSet;
-
         using WorldState = Array<Array<int, 40>, 20>;
 
         const bool _doGenerateEmptyMap = true;
         WorldState _worldState1;
         WorldState _worldState2;
-
-        WorldState
-            * _currState = &_worldState1,
-            * _nextState = &_worldState2;
+        WorldState *_currState = &_worldState1, *_nextState = &_worldState2;
 
         Point  _tileSetSize;
         Point  _tileSize;
@@ -93,27 +95,59 @@ namespace JanSordid::SDL_Example
         bool   _isPainting   = false;
         bool   _isPanning    = false;
         bool   _showGrid     = false;
-
-        // Variable für TAB-Taste (Palette anzeigen)
         bool   _showPalette  = false;
 
         constexpr static Duration UpdateDeltaTime = 100ms;
-
         Duration _nextUpdateTime = {};
 
     public:
         using Base::Base;
-
         void Init() override;
         void Destroy() override;
-
         bool Input( const Event & event ) override;
-        void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT       ) override;
+        void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT ) override;
         void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
+        constexpr Color clearColor() const noexcept override { return Color{ 100, 100, 100, 255 }; }
+    };
 
-        constexpr Color clearColor() const noexcept override
-        {
-             return Color{ 100, 100, 100, 255 };
-        }
+    // =========================================================
+    // KLASSE: Hauptmenü
+    // =========================================================
+    class MainMenuState : public JanSordid::SDL::GameState<EditorGameBase>
+    {
+        using Base = JanSordid::SDL::GameState<EditorGameBase>;
+        Owned<Font> _fontTitle;
+        Owned<Font> _fontMenu;
+
+    public:
+        using Base::Base;
+        void Init() override;
+        bool Input( const Event & event ) override;
+        void Update( u64, Duration, f32 ) override {}
+        void Render( u64, Duration, f32 ) override;
+        constexpr Color clearColor() const noexcept override { return Color{ 30, 30, 40, 255 }; }
+
+    private:
+        bool DrawButton(const char* text, float y, float mouseX, float mouseY, bool isClicked);
+    };
+
+    // =========================================================
+    // KLASSE: Settings
+    // =========================================================
+    class SettingsState : public JanSordid::SDL::GameState<EditorGameBase>
+    {
+        using Base = JanSordid::SDL::GameState<EditorGameBase>;
+        Owned<Font> _font;
+
+    public:
+        using Base::Base;
+        void Init() override;
+        bool Input( const Event & event ) override;
+        void Update( u64, Duration, f32 ) override {}
+        void Render( u64, Duration, f32 ) override;
+        constexpr Color clearColor() const noexcept override { return Color{ 40, 30, 30, 255 }; }
+
+    private:
+        bool DrawButton(const char* text, float y, float mouseX, float mouseY, bool isClicked);
     };
 }

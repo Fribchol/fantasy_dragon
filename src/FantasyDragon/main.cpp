@@ -1,21 +1,29 @@
 #include "sor/sdl_game.hpp"
 #include "fantasydragon_mapeditor.hpp"
 
+// Wir nutzen std::uint8_t für u8, um sicher zu sein
+using u8 = std::uint8_t;
 using JanSordid::Core::f32;
-using JanSordid::Core::u8;
 
 namespace JanSordid::FantasyDragon
 {
-    enum class GameStateID { Editor };
-
     class DragonGame : public JanSordid::SDL::Game<>
     {
     public:
         DragonGame()
-           : JanSordid::SDL::Game<>( "Fantasy Dragon Editor", { 1980, 1020 } )
+           : JanSordid::SDL::Game<>( "Fantasy Dragon", { 1280, 720 } )
         {
+            // States registrieren (mit vollem Namen, um Fehler zu vermeiden)
+            // 0 = MainMenu
+            this->AddStates<JanSordid::SDL_Example::MainMenuState>( *this );
+            // 1 = Editor
             this->AddStates<JanSordid::SDL_Example::EditorState>( *this );
-            this->PushState( (u8)GameStateID::Editor );
+            // 2 = Settings
+            this->AddStates<JanSordid::SDL_Example::SettingsState>( *this );
+
+            // Start im Main Menu
+            // Wir casten explizit auf uint8_t
+            this->PushState( (u8)JanSordid::SDL_Example::GameStateID::MainMenu );
         }
 
         void Update( const f32 deltaT ) override    { JanSordid::SDL::Game<>::Update( deltaT ); }
