@@ -30,3 +30,8 @@
   - Starten immer an der **oberen Bodenbegrenzung**  
   - **W** gedrückt halten → hochklettern  
   - **S** gedrückt halten → herunterklettern
+
+## Aufgaben
+Patrick Level Editor
+Nadine Steuerung und Hitboxen
+Marcus Magiesystem
