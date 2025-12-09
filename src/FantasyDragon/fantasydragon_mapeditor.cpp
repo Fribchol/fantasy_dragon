@@ -4,7 +4,7 @@
 #include <iostream>
 #include <string>
 #include <array>
-#include <algorithm> // Wichtig für min/max Berechnung
+#include <algorithm>
 
 #if __has_include("hsnr64/offset.hpp")
     #include "hsnr64/offset.hpp"
@@ -24,8 +24,10 @@ namespace JanSordid::SDL_Example
 {
     using MapType = std::array<std::array<int, 40>, 20>;
 
+    // GLOBALE SETTINGS INIT
     bool GlobalSettings::soundEnabled = true;
     bool GlobalSettings::isFullscreen = false;
+    bool GlobalSettings::isEditorMode = true; // Default auf Editor
 
     // --- Hilfsfunktionen für Datei I/O ---
     void SaveMapToFile(const std::string& filename, const MapType& map) {
@@ -83,10 +85,10 @@ namespace JanSordid::SDL_Example
     }
 
     // =========================================================
-    // EDITOR STATE
+    // EDITOR STATE (Dient jetzt auch als GAME STATE)
     // =========================================================
     void EditorState::Init() {
-       SDL_Log("--- INIT EDITOR ---");
+       SDL_Log("--- INIT STATE (EditorMode: %d) ---", GlobalSettings::isEditorMode);
        if( !_font ) _font.reset( TTF_OpenFont( BasePathFont "RobotoSlab-Bold.ttf", (int)(9 * _game.scalingFactor()) ) );
 
        if( !_tileSet ) {
@@ -121,10 +123,17 @@ namespace JanSordid::SDL_Example
        _camera.y = -((winH / 2.0f) - (mapPixelH / 2.0f));
 
        _paletteScale = 1;
-       _showPalette = true;
-       _showGrid = true;
 
-       // Init Selection Defaults
+       // SETTINGS ANHAND DES MODUS
+       if (GlobalSettings::isEditorMode) {
+           _showPalette = true;
+           _showGrid = true;
+       } else {
+           // IM SPIEL: Alles aus
+           _showPalette = false;
+           _showGrid = false;
+       }
+
        _pickedSize = { 1, 1 };
        _pickedIdx = { 0, 0 };
        _isSelectingPalette = false;
@@ -133,59 +142,53 @@ namespace JanSordid::SDL_Example
     void EditorState::Destroy() {}
 
     bool EditorState::Input( const Event & evt ) {
-       const char* defaultPath = "C:\\Users\\frieb\\CLionProjects\\fantasy_dragon\\asset\\map\\";
+       const char* defaultPath = "C:\\Users\\frieb\\CLionProjects\\fantasy_dragon\\asset\\map";
 
        if (evt.type == SDL_EVENT_KEY_DOWN) {
+           // ESCAPE geht IMMER (um zurück ins Menü zu kommen)
            if (evt.key.scancode == SDL_SCANCODE_ESCAPE) { _game.ReplaceState( (u8)GameStateID::MainMenu ); return true; }
-           if (evt.key.scancode == SDL_SCANCODE_TAB && evt.key.repeat == 0) _showPalette = !_showPalette;
-           if (evt.key.scancode == SDL_SCANCODE_F8) SDL_ShowSaveFileDialog(OnMapSave, _currState, window(), nullptr, 0, defaultPath);
-           if (evt.key.scancode == SDL_SCANCODE_F9) SDL_ShowOpenFileDialog(OnMapLoad, _currState, window(), nullptr, 0, defaultPath, false);
-           if (evt.key.scancode == SDL_SCANCODE_F1) _mapScale = 1;
-           if (evt.key.scancode == SDL_SCANCODE_F2) _mapScale = 2;
-           if (evt.key.scancode == SDL_SCANCODE_F6 && evt.key.repeat == 0) _showGrid = !_showGrid;
+
+           // NUR IM EDITOR ERLAUBT:
+           if (GlobalSettings::isEditorMode) {
+               if (evt.key.scancode == SDL_SCANCODE_TAB && evt.key.repeat == 0) _showPalette = !_showPalette;
+               if (evt.key.scancode == SDL_SCANCODE_F8) SDL_ShowSaveFileDialog(OnMapSave, _currState, window(), nullptr, 0, defaultPath);
+               if (evt.key.scancode == SDL_SCANCODE_F9) SDL_ShowOpenFileDialog(OnMapLoad, _currState, window(), nullptr, 0, defaultPath, false);
+               if (evt.key.scancode == SDL_SCANCODE_F1) _mapScale = 1;
+               if (evt.key.scancode == SDL_SCANCODE_F2) _mapScale = 2;
+               if (evt.key.scancode == SDL_SCANCODE_F6 && evt.key.repeat == 0) _showGrid = !_showGrid;
+           }
        }
 
-       if (evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_LEFT) {
+       // MAUSKLICKS (Nur im Editor zum Malen)
+       if (GlobalSettings::isEditorMode && evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_LEFT) {
             FPoint m = { (f32)evt.button.x, (f32)evt.button.y };
             bool clickedInsidePalette = false;
 
-            // 1. Prüfen: Klick in Palette?
             if (_showPalette) {
                 const FPoint paletteSize = toF(_tileSetSize * _paletteScale);
-                // WICHTIG: Nur als Palette-Klick werten, wenn Maus wirklich drüber ist
                 if (m.x < paletteSize.x && m.y < paletteSize.y) {
                     clickedInsidePalette = true;
                     Point p = toI(m) / (_tileSize * _paletteScale);
-
                     if(p.x < _tileCount.x && p.y < _tileCount.y) {
                         _isSelectingPalette = true;
                         _selectionStart = p;
                         _pickedIdx = p;
-                        _pickedSize = { 1, 1 }; // Reset bei neuem Klick
-                        SDL_Log("Palette Select Start: %d, %d", p.x, p.y);
+                        _pickedSize = { 1, 1 };
                     }
                 }
             }
 
-            // 2. Map Painting (Nur wenn wir NICHT in die Palette geklickt haben)
             if (!clickedInsidePalette) {
                 _isPainting = true;
                 Point p = toI(m - _camera) / (_tileSize * _mapScale);
-
-                // SOFORT MALEN (Single Click)
                 if(p.y >= 0 && (size_t)p.y < _currState->size() && p.x >= 0 && (size_t)p.x < (*_currState)[0].size()) {
                      for(int py = 0; py < _pickedSize.y; ++py) {
                          for(int px = 0; px < _pickedSize.x; ++px) {
-                             int targetX = p.x + px;
-                             int targetY = p.y + py;
-
+                             int targetX = p.x + px; int targetY = p.y + py;
                              if(targetY >= 0 && (size_t)targetY < _currState->size() && targetX >= 0 && (size_t)targetX < (*_currState)[0].size()) {
-                                 int tileIdxX = _pickedIdx.x + px;
-                                 int tileIdxY = _pickedIdx.y + py;
-
+                                 int tileIdxX = _pickedIdx.x + px; int tileIdxY = _pickedIdx.y + py;
                                  if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) {
-                                     int finalID = tileIdxX + tileIdxY * _tileCount.x;
-                                     (*_currState)[targetY][targetX] = finalID;
+                                     (*_currState)[targetY][targetX] = tileIdxX + tileIdxY * _tileCount.x;
                                  }
                              }
                          }
@@ -194,53 +197,29 @@ namespace JanSordid::SDL_Example
             }
        }
 
-       if (evt.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-           _isPainting = false;
-           _isPanning = false;
-           _isSelectingPalette = false;
-       }
+       if (evt.type == SDL_EVENT_MOUSE_BUTTON_UP) { _isPainting = false; _isPanning = false; _isSelectingPalette = false; }
        if (evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_RIGHT) _isPanning = true;
 
        if (evt.type == SDL_EVENT_MOUSE_MOTION) {
            FPoint m = { (f32)evt.motion.x, (f32)evt.motion.y };
-
-           // A) PALETTE SELECTION ZIEHEN
-           if (_isSelectingPalette && _showPalette) {
+           if (GlobalSettings::isEditorMode && _isSelectingPalette && _showPalette) {
                 Point currP = toI(m) / (_tileSize * _paletteScale);
-
-                // Begrenzen auf Tileset Größe
-                if (currP.x >= _tileCount.x) currP.x = _tileCount.x - 1;
-                if (currP.y >= _tileCount.y) currP.y = _tileCount.y - 1;
-                if (currP.x < 0) currP.x = 0;
-                if (currP.y < 0) currP.y = 0;
-
-                int x1 = std::min(_selectionStart.x, currP.x);
-                int y1 = std::min(_selectionStart.y, currP.y);
-                int x2 = std::max(_selectionStart.x, currP.x);
-                int y2 = std::max(_selectionStart.y, currP.y);
-
-                _pickedIdx = { x1, y1 };
-                _pickedSize = { x2 - x1 + 1, y2 - y1 + 1 };
+                if (currP.x >= _tileCount.x) currP.x = _tileCount.x - 1; if (currP.y >= _tileCount.y) currP.y = _tileCount.y - 1;
+                if (currP.x < 0) currP.x = 0; if (currP.y < 0) currP.y = 0;
+                int x1 = std::min(_selectionStart.x, currP.x); int y1 = std::min(_selectionStart.y, currP.y);
+                int x2 = std::max(_selectionStart.x, currP.x); int y2 = std::max(_selectionStart.y, currP.y);
+                _pickedIdx = { x1, y1 }; _pickedSize = { x2 - x1 + 1, y2 - y1 + 1 };
            }
-
-           // B) MALEN AUF MAP (Ziehen)
-           if(_isPainting) {
+           if(GlobalSettings::isEditorMode && _isPainting) {
                bool overPalette = _showPalette && (m.x < toF(_tileSetSize*_paletteScale).x && m.y < toF(_tileSetSize*_paletteScale).y);
-               // Nur malen, wenn wir nicht gerade über der Palette schweben
                if(!overPalette && !_isSelectingPalette) {
                    Point p = toI(m - _camera) / (_tileSize * _mapScale);
-
                    for(int py = 0; py < _pickedSize.y; ++py) {
                          for(int px = 0; px < _pickedSize.x; ++px) {
-                             int targetX = p.x + px;
-                             int targetY = p.y + py;
-
+                             int targetX = p.x + px; int targetY = p.y + py;
                              if(targetY >= 0 && (size_t)targetY < _currState->size() && targetX >= 0 && (size_t)targetX < (*_currState)[0].size()) {
-                                 int tileIdxX = _pickedIdx.x + px;
-                                 int tileIdxY = _pickedIdx.y + py;
-                                 if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) {
-                                     (*_currState)[targetY][targetX] = tileIdxX + tileIdxY * _tileCount.x;
-                                 }
+                                 int tileIdxX = _pickedIdx.x + px; int tileIdxY = _pickedIdx.y + py;
+                                 if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) (*_currState)[targetY][targetX] = tileIdxX + tileIdxY * _tileCount.x;
                              }
                          }
                    }
@@ -262,7 +241,7 @@ namespace JanSordid::SDL_Example
        FRect mapBG = toFRect( _camera, FPoint{(f32)curr[0].size(), (f32)curr.size()} * mapTS );
        SDL_RenderFillRect(renderer(), &mapBG);
 
-       // 2. Map Tiles Rendern
+       // 2. Map Tiles
        for( size_t y = 0; y < curr.size(); ++y ) {
           for( size_t x = 0; x < curr[y].size(); ++x ) {
              int idx = curr[y][x];
@@ -272,11 +251,15 @@ namespace JanSordid::SDL_Example
              SDL_RenderTexture( renderer(), _tileSet.get(), &srcR, &dstR );
           }
        }
-       SDL_SetRenderDrawColor( renderer(), 255, 0, 0, 255 );
-       SDL_RenderRect( renderer(), &mapBG );
 
-       // 3. Grid
-       if(_showGrid) {
+       // RAHMEN nur im Editor
+       if(GlobalSettings::isEditorMode) {
+           SDL_SetRenderDrawColor( renderer(), 255, 0, 0, 255 );
+           SDL_RenderRect( renderer(), &mapBG );
+       }
+
+       // 3. Grid (Nur Editor)
+       if(GlobalSettings::isEditorMode && _showGrid) {
            SDL_SetRenderDrawColor( renderer(), 255, 255, 255, 50 ); SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND);
            for(size_t y=0; y<curr.size(); ++y) for(size_t x=0; x<curr[y].size(); ++x) {
                 FRect gridR = toFRect(FPoint{(f32)x, (f32)y}*mapTS+_camera, mapTS);
@@ -284,51 +267,45 @@ namespace JanSordid::SDL_Example
            }
        }
 
-       // --- NEU: GHOST PREVIEW (Vorschau unter der Maus) ---
-       float mx, my; SDL_GetMouseState(&mx, &my);
-       FPoint m = { mx, my };
-       bool overPalette = _showPalette && (m.x < toF(_tileSetSize*_paletteScale).x && m.y < toF(_tileSetSize*_paletteScale).y);
-
-       if (!overPalette && !_isSelectingPalette) {
-           Point p = toI(m - _camera) / (_tileSize * _mapScale);
-
-           // Vorschau nur zeichnen, wenn Maus über Map
-           if(p.y >= 0 && (size_t)p.y < curr.size() && p.x >= 0 && (size_t)p.x < curr[0].size()) {
-               SDL_SetTextureAlphaMod(_tileSet.get(), 150); // Transparent machen
-
-               for(int py = 0; py < _pickedSize.y; ++py) {
-                   for(int px = 0; px < _pickedSize.x; ++px) {
-                       int tileIdxX = _pickedIdx.x + px;
-                       int tileIdxY = _pickedIdx.y + py;
-
-                       // Nur valide Tiles anzeigen
-                       if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) {
-                           FRect srcR = toFRect( toF(Point{tileIdxX, tileIdxY} * _tileSize), toF(_tileSize) );
-                           FRect dstR = toFRect( FPoint{(f32)(p.x + px), (f32)(p.y + py)} * mapTS + _camera, mapTS );
-                           SDL_RenderTexture( renderer(), _tileSet.get(), &srcR, &dstR );
+       // 4. Ghost Preview (Nur Editor)
+       if(GlobalSettings::isEditorMode) {
+           float mx, my; SDL_GetMouseState(&mx, &my);
+           FPoint m = { mx, my };
+           bool overPalette = _showPalette && (m.x < toF(_tileSetSize*_paletteScale).x && m.y < toF(_tileSetSize*_paletteScale).y);
+           if (!overPalette && !_isSelectingPalette) {
+               Point p = toI(m - _camera) / (_tileSize * _mapScale);
+               if(p.y >= 0 && (size_t)p.y < curr.size() && p.x >= 0 && (size_t)p.x < curr[0].size()) {
+                   SDL_SetTextureAlphaMod(_tileSet.get(), 150);
+                   for(int py = 0; py < _pickedSize.y; ++py) {
+                       for(int px = 0; px < _pickedSize.x; ++px) {
+                           int tileIdxX = _pickedIdx.x + px; int tileIdxY = _pickedIdx.y + py;
+                           if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) {
+                               FRect srcR = toFRect( toF(Point{tileIdxX, tileIdxY} * _tileSize), toF(_tileSize) );
+                               FRect dstR = toFRect( FPoint{(f32)(p.x + px), (f32)(p.y + py)} * mapTS + _camera, mapTS );
+                               SDL_RenderTexture( renderer(), _tileSet.get(), &srcR, &dstR );
+                           }
                        }
                    }
+                   SDL_SetTextureAlphaMod(_tileSet.get(), 255);
                }
-               SDL_SetTextureAlphaMod(_tileSet.get(), 255); // Reset Alpha
            }
        }
 
-       // 4. Palette
-       if(_showPalette) {
+       // 5. Palette (Nur Editor)
+       if(GlobalSettings::isEditorMode && _showPalette) {
            FRect r = toFRect(FPoint{0,0}, toF(_tileSize*_paletteScale*_tileCount));
            SDL_SetRenderDrawColor(renderer(), 10, 10, 20, 240); SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND); SDL_RenderFillRect(renderer(), &r);
            SDL_RenderTexture(renderer(), _tileSet.get(), EntireFRect, &r);
-
            SDL_SetRenderDrawColor(renderer(), 255, 255, 0, 255);
            FPoint selectSize = toF(_tileSize * _paletteScale * _pickedSize);
            FRect pickR = toFRect(toF(_tileSize * _paletteScale * _pickedIdx), selectSize);
            SDL_RenderRect(renderer(), &pickR);
        }
 
-       // 5. UI Text
-       std::ostringstream oss;
-       oss << "Editor Mode\n[ESC] Main Menu\n[TAB] Palette\n[F8] Save As.. [F9] Load..\nMulti-Select: " << _pickedSize.x << "x" << _pickedSize.y;
-       if(_font) {
+       // 6. UI Text
+       if(_font && GlobalSettings::isEditorMode) {
+           std::ostringstream oss;
+           oss << "Editor Mode\n[ESC] Main Menu\n[TAB] Palette\n[F8] Save [F9] Load";
            Owned<Surface> s(TTF_RenderText_Blended_Wrapped(_font.get(), oss.str().c_str(), 0, {255,255,255,255}, 800));
            if(s) {
                Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
@@ -364,8 +341,16 @@ namespace JanSordid::SDL_Example
             float mx = (float)event.button.x; float my = (float)event.button.y;
             int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
             float centerY = winH / 2.0f; float spacing = 60.0f; float startY  = centerY - (4 * spacing) / 2.0f + 50.0f;
-            if (DrawButton("Spiel starten", startY, mx, my, true)) _game.ReplaceState((u8)GameStateID::Editor);
-            else if (DrawButton("Map Creator", startY + spacing, mx, my, true)) _game.ReplaceState((u8)GameStateID::Editor);
+
+            // --- HIER IST DIE LOGIK FÜR SPIEL VS EDITOR ---
+            if (DrawButton("Spiel starten", startY, mx, my, true)) {
+                GlobalSettings::isEditorMode = false; // Spiel-Modus
+                _game.ReplaceState((u8)GameStateID::Editor); // Nutzt noch EditorState Klasse
+            }
+            else if (DrawButton("Map Creator", startY + spacing, mx, my, true)) {
+                GlobalSettings::isEditorMode = true; // Editor-Modus
+                _game.ReplaceState((u8)GameStateID::Editor);
+            }
             else if (DrawButton("Settings", startY + spacing*2, mx, my, true)) _game.PushState((u8)GameStateID::Settings);
             else if (DrawButton("Beenden", startY + spacing*3, mx, my, true)) { SDL_Event quit; quit.type = SDL_EVENT_QUIT; SDL_PushEvent(&quit); }
         }

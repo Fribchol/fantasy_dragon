@@ -8,7 +8,7 @@
 #include <string>
 #include <sstream>
 #include <memory>
-#include <cstdint> // WICHTIG für uint8_t
+#include <cstdint>
 
 // Fallback Pfade
 #ifndef BasePathFont
@@ -61,10 +61,11 @@ namespace JanSordid::SDL_Example
     struct GlobalSettings {
         static bool soundEnabled;
         static bool isFullscreen;
+        static bool isEditorMode; // NEU: Unterscheidet Spiel vs Editor
     };
 
     // =========================================================
-    // KLASSE: Editor (Der Map Creator)
+    // KLASSE: Editor (Der Map Creator & Spiel-Engine)
     // =========================================================
     class EditorState : public JanSordid::SDL::GameState<EditorGameBase>
     {
@@ -89,12 +90,10 @@ namespace JanSordid::SDL_Example
         Point  _tileCount;
         FPoint _camera;
 
-        // --- Code Anpassung: Multi-Tile Selection Variablen ---
         Point  _pickedIdx          = Point{ 0, 0 };
-        Point  _pickedSize         = Point{ 1, 1 }; // Größe der Auswahl (Breite/Höhe)
-        Point  _selectionStart     = Point{ 0, 0 }; // Startpunkt beim Ziehen
-        bool   _isSelectingPalette = false;         // Modus-Flag
-        // -----------------------------------------------------
+        Point  _pickedSize         = Point{ 1, 1 };
+        Point  _selectionStart     = Point{ 0, 0 };
+        bool   _isSelectingPalette = false;
 
         i32    _mapScale     = 2;
         i32    _paletteScale = 1;
