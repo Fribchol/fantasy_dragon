@@ -26,14 +26,13 @@
 namespace JanSordid::SDL_Example
 {
     // =========================================================
-    // Typ-Definitionen (REPARATUR: u8 explizit definieren)
+    // Typ-Definitionen
     // =========================================================
     using namespace std::chrono_literals;
 
     template <typename T> using Owned = std::unique_ptr<T>;
     template <typename T, std::size_t N> using Array = std::array<T, N>;
 
-    // HIER WAR DER FEHLER: Wir definieren u8 jetzt ganz sicher!
     using u8  = std::uint8_t;
     using i32 = int;
     using f32 = float;
@@ -89,7 +88,14 @@ namespace JanSordid::SDL_Example
         Point  _tileSize;
         Point  _tileCount;
         FPoint _camera;
-        Point  _pickedIdx    = Point{ 0, 0 };
+
+        // --- Code Anpassung: Multi-Tile Selection Variablen ---
+        Point  _pickedIdx          = Point{ 0, 0 };
+        Point  _pickedSize         = Point{ 1, 1 }; // Größe der Auswahl (Breite/Höhe)
+        Point  _selectionStart     = Point{ 0, 0 }; // Startpunkt beim Ziehen
+        bool   _isSelectingPalette = false;         // Modus-Flag
+        // -----------------------------------------------------
+
         i32    _mapScale     = 2;
         i32    _paletteScale = 1;
         bool   _isPainting   = false;

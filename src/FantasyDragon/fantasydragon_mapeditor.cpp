@@ -2,6 +2,9 @@
 #include <sstream>
 #include <fstream>
 #include <iostream>
+#include <string>
+#include <array>
+#include <algorithm> // Wichtig für min/max Berechnung
 
 #if __has_include("hsnr64/offset.hpp")
     #include "hsnr64/offset.hpp"
@@ -19,12 +22,13 @@ using JanSordid::SDL::EntireFRect;
 
 namespace JanSordid::SDL_Example
 {
-    // Globale Variablen
+    using MapType = std::array<std::array<int, 40>, 20>;
+
     bool GlobalSettings::soundEnabled = true;
     bool GlobalSettings::isFullscreen = false;
 
-    // --- Hilfsfunktionen ---
-    void SaveMapToFile(const std::string& filename, const std::array<std::array<int, 40>, 20>& map) {
+    // --- Hilfsfunktionen für Datei I/O ---
+    void SaveMapToFile(const std::string& filename, const MapType& map) {
         std::ofstream file(filename);
         if (file.is_open()) {
             for (const auto& row : map) {
@@ -32,42 +36,45 @@ namespace JanSordid::SDL_Example
                 file << "\n";
             }
             file.close();
-            SDL_Log("Map gespeichert.");
+            SDL_Log("Map gespeichert: %s", filename.c_str());
+        } else {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Fehler beim Speichern: %s", filename.c_str());
         }
     }
 
-    bool LoadMapFromFile(const std::string& filename, std::array<std::array<int, 40>, 20>& map) {
+    bool LoadMapFromFile(const std::string& filename, MapType& map) {
         std::ifstream file(filename);
         if (file.is_open()) {
             for (auto& row : map) for (auto& cell : row) file >> cell;
             file.close();
-            SDL_Log("Map geladen.");
+            SDL_Log("Map geladen: %s", filename.c_str());
             return true;
         }
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Fehler beim Laden: %s", filename.c_str());
         return false;
     }
 
-    // --- Funktion zum Generieren einer Notfall-Textur (Falls Datei fehlt) ---
+    void SDLCALL OnMapSave(void* userdata, const char* const* filelist, int filter) {
+        if (!filelist || !filelist[0]) return;
+        auto* map = static_cast<MapType*>(userdata);
+        if(map) SaveMapToFile(filelist[0], *map);
+    }
+
+    void SDLCALL OnMapLoad(void* userdata, const char* const* filelist, int filter) {
+        if (!filelist || !filelist[0]) return;
+        auto* map = static_cast<MapType*>(userdata);
+        if(map) LoadMapFromFile(filelist[0], *map);
+    }
+
     SDL_Surface* GenerateFallbackTileset() {
         int w = 256; int h = 256;
         SDL_Surface* surf = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_RGBA8888);
         if (!surf) return nullptr;
-
         for (int y = 0; y < h; ++y) {
             for (int x = 0; x < w; ++x) {
-                bool gridX = (x / 16) % 2 == 0;
-                bool gridY = (y / 16) % 2 == 0;
-
-                Uint32 color;
-                if (gridX ^ gridY) color = SDL_MapRGBA(SDL_GetPixelFormatDetails(surf->format), nullptr, 255, 0, 255, 255); // Pink
-                else               color = SDL_MapRGBA(SDL_GetPixelFormatDetails(surf->format), nullptr, 0, 255, 0, 255);   // Grün
-
-                // Kachel 0 (Oben links) Blau
-                if (y < 16 && x < 16) color = SDL_MapRGBA(SDL_GetPixelFormatDetails(surf->format), nullptr, 100, 100, 255, 255);
-                // Kachel 1 (Rechts daneben) Grau
-                if (y < 16 && x >= 16 && x < 32) color = SDL_MapRGBA(SDL_GetPixelFormatDetails(surf->format), nullptr, 128, 128, 128, 255);
-
-                // REPARATUR: SDL_WriteSurfacePixel ersetzt durch FillSurfaceRect
+                bool gridX = (x / 16) % 2 == 0; bool gridY = (y / 16) % 2 == 0;
+                Uint32 color = (gridX ^ gridY) ? SDL_MapRGBA(SDL_GetPixelFormatDetails(surf->format), nullptr, 255, 0, 255, 255)
+                                               : SDL_MapRGBA(SDL_GetPixelFormatDetails(surf->format), nullptr, 0, 255, 0, 255);
                 SDL_Rect pixelRect = { x, y, 1, 1 };
                 SDL_FillSurfaceRect(surf, &pixelRect, color);
             }
@@ -80,27 +87,18 @@ namespace JanSordid::SDL_Example
     // =========================================================
     void EditorState::Init() {
        SDL_Log("--- INIT EDITOR ---");
-       // Warnung behoben: expliziter Cast zu int
        if( !_font ) _font.reset( TTF_OpenFont( BasePathFont "RobotoSlab-Bold.ttf", (int)(9 * _game.scalingFactor()) ) );
 
        if( !_tileSet ) {
-          // KORREKTUR: Der spezifische Dateiname
           const char* filename = BasePathGraphic "tiles_fantasydragon.png";
-          SDL_Log("Versuche Tileset zu laden: %s", filename);
-
           Owned<Surface> surf(IMG_Load(filename));
-
-          if(surf) {
-              SDL_Log("Erfolg: Tileset geladen (%dx%d)", surf->w, surf->h);
-          } else {
-              SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FEHLER: Konnte '%s' nicht laden! Generiere Notfall-Textur. Fehler: %s", filename, SDL_GetError());
+          if(!surf) {
+              SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Bild fehlt: %s", filename);
               surf.reset( GenerateFallbackTileset() );
           }
-
           _tileSet.reset( SDL_CreateTextureFromSurface( renderer(), surf.get() ) );
           _tileSetSize = { surf->w, surf->h };
 
-          // 16x16 Pixel Raster
           const int PIXEL_SIZE = 16;
           _tileSize = { PIXEL_SIZE, PIXEL_SIZE };
           _tileCount = _tileSetSize / _tileSize;
@@ -110,70 +108,142 @@ namespace JanSordid::SDL_Example
        }
 
        if( _doGenerateEmptyMap ) {
-          // Wir nutzen die ersten beiden Kacheln oben links für die Standard-Map
-          const int FillTile = 0;
-          const int BorderTile = 1;
-
+          const int FillTile = 0; const int BorderTile = 1;
           for( auto & row : *_currState ) { row.fill( FillTile ); *row.begin() = BorderTile; *row.rbegin() = BorderTile; }
           (*_currState->begin()).fill( BorderTile ); (*_currState->rbegin()).fill( BorderTile );
        }
 
-       // --- Kamera Zentrieren ---
-       int winW, winH;
-       SDL_GetWindowSize(window(), &winW, &winH);
+       int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
        _mapScale = 2;
-
        float mapPixelW = (float)( (*_currState)[0].size() * 16 * _mapScale );
        float mapPixelH = (float)( (*_currState).size() * 16 * _mapScale );
-
        _camera.x = -((winW / 2.0f) - (mapPixelW / 2.0f));
        _camera.y = -((winH / 2.0f) - (mapPixelH / 2.0f));
 
        _paletteScale = 1;
        _showPalette = true;
        _showGrid = true;
+
+       // Init Selection Defaults
+       _pickedSize = { 1, 1 };
+       _pickedIdx = { 0, 0 };
+       _isSelectingPalette = false;
     }
 
     void EditorState::Destroy() {}
 
     bool EditorState::Input( const Event & evt ) {
+       const char* defaultPath = "C:\\Users\\frieb\\CLionProjects\\fantasy_dragon\\asset\\map\\";
+
        if (evt.type == SDL_EVENT_KEY_DOWN) {
            if (evt.key.scancode == SDL_SCANCODE_ESCAPE) { _game.ReplaceState( (u8)GameStateID::MainMenu ); return true; }
            if (evt.key.scancode == SDL_SCANCODE_TAB && evt.key.repeat == 0) _showPalette = !_showPalette;
-           if (evt.key.scancode == SDL_SCANCODE_F8) SaveMapToFile("map_saved.txt", *_currState);
-           if (evt.key.scancode == SDL_SCANCODE_F9) LoadMapFromFile("map_saved.txt", *_currState);
+           if (evt.key.scancode == SDL_SCANCODE_F8) SDL_ShowSaveFileDialog(OnMapSave, _currState, window(), nullptr, 0, defaultPath);
+           if (evt.key.scancode == SDL_SCANCODE_F9) SDL_ShowOpenFileDialog(OnMapLoad, _currState, window(), nullptr, 0, defaultPath, false);
            if (evt.key.scancode == SDL_SCANCODE_F1) _mapScale = 1;
            if (evt.key.scancode == SDL_SCANCODE_F2) _mapScale = 2;
            if (evt.key.scancode == SDL_SCANCODE_F6 && evt.key.repeat == 0) _showGrid = !_showGrid;
        }
+
        if (evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_LEFT) {
-            FPoint m = { evt.button.x, evt.button.y };
-            bool clickedPalette = false;
+            FPoint m = { (f32)evt.button.x, (f32)evt.button.y };
+            bool clickedInsidePalette = false;
+
+            // 1. Prüfen: Klick in Palette?
             if (_showPalette) {
                 const FPoint paletteSize = toF(_tileSetSize * _paletteScale);
+                // WICHTIG: Nur als Palette-Klick werten, wenn Maus wirklich drüber ist
                 if (m.x < paletteSize.x && m.y < paletteSize.y) {
-                    clickedPalette = true;
+                    clickedInsidePalette = true;
                     Point p = toI(m) / (_tileSize * _paletteScale);
-                    if(p.x < _tileCount.x && p.y < _tileCount.y) _pickedIdx = p;
+
+                    if(p.x < _tileCount.x && p.y < _tileCount.y) {
+                        _isSelectingPalette = true;
+                        _selectionStart = p;
+                        _pickedIdx = p;
+                        _pickedSize = { 1, 1 }; // Reset bei neuem Klick
+                        SDL_Log("Palette Select Start: %d, %d", p.x, p.y);
+                    }
                 }
             }
-            if (!clickedPalette) {
-                Point p = toI(m - _camera) / (_tileSize * _mapScale);
-                if(p.y >= 0 && (size_t)p.y < _currState->size() && p.x >= 0 && (size_t)p.x < (*_currState)[0].size())
-                    (*_currState)[p.y][p.x] = _pickedIdx.x + _pickedIdx.y * _tileCount.x;
+
+            // 2. Map Painting (Nur wenn wir NICHT in die Palette geklickt haben)
+            if (!clickedInsidePalette) {
                 _isPainting = true;
+                Point p = toI(m - _camera) / (_tileSize * _mapScale);
+
+                // SOFORT MALEN (Single Click)
+                if(p.y >= 0 && (size_t)p.y < _currState->size() && p.x >= 0 && (size_t)p.x < (*_currState)[0].size()) {
+                     for(int py = 0; py < _pickedSize.y; ++py) {
+                         for(int px = 0; px < _pickedSize.x; ++px) {
+                             int targetX = p.x + px;
+                             int targetY = p.y + py;
+
+                             if(targetY >= 0 && (size_t)targetY < _currState->size() && targetX >= 0 && (size_t)targetX < (*_currState)[0].size()) {
+                                 int tileIdxX = _pickedIdx.x + px;
+                                 int tileIdxY = _pickedIdx.y + py;
+
+                                 if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) {
+                                     int finalID = tileIdxX + tileIdxY * _tileCount.x;
+                                     (*_currState)[targetY][targetX] = finalID;
+                                 }
+                             }
+                         }
+                     }
+                }
             }
        }
-       if (evt.type == SDL_EVENT_MOUSE_BUTTON_UP) { _isPainting = false; _isPanning = false; }
+
+       if (evt.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+           _isPainting = false;
+           _isPanning = false;
+           _isSelectingPalette = false;
+       }
        if (evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_RIGHT) _isPanning = true;
+
        if (evt.type == SDL_EVENT_MOUSE_MOTION) {
+           FPoint m = { (f32)evt.motion.x, (f32)evt.motion.y };
+
+           // A) PALETTE SELECTION ZIEHEN
+           if (_isSelectingPalette && _showPalette) {
+                Point currP = toI(m) / (_tileSize * _paletteScale);
+
+                // Begrenzen auf Tileset Größe
+                if (currP.x >= _tileCount.x) currP.x = _tileCount.x - 1;
+                if (currP.y >= _tileCount.y) currP.y = _tileCount.y - 1;
+                if (currP.x < 0) currP.x = 0;
+                if (currP.y < 0) currP.y = 0;
+
+                int x1 = std::min(_selectionStart.x, currP.x);
+                int y1 = std::min(_selectionStart.y, currP.y);
+                int x2 = std::max(_selectionStart.x, currP.x);
+                int y2 = std::max(_selectionStart.y, currP.y);
+
+                _pickedIdx = { x1, y1 };
+                _pickedSize = { x2 - x1 + 1, y2 - y1 + 1 };
+           }
+
+           // B) MALEN AUF MAP (Ziehen)
            if(_isPainting) {
-               FPoint m = { evt.motion.x, evt.motion.y };
                bool overPalette = _showPalette && (m.x < toF(_tileSetSize*_paletteScale).x && m.y < toF(_tileSetSize*_paletteScale).y);
-               if(!overPalette) {
+               // Nur malen, wenn wir nicht gerade über der Palette schweben
+               if(!overPalette && !_isSelectingPalette) {
                    Point p = toI(m - _camera) / (_tileSize * _mapScale);
-                   if(p.y >= 0 && (size_t)p.y < _currState->size() && p.x >= 0 && (size_t)p.x < (*_currState)[0].size())
-                        (*_currState)[p.y][p.x] = _pickedIdx.x + _pickedIdx.y * _tileCount.x;
+
+                   for(int py = 0; py < _pickedSize.y; ++py) {
+                         for(int px = 0; px < _pickedSize.x; ++px) {
+                             int targetX = p.x + px;
+                             int targetY = p.y + py;
+
+                             if(targetY >= 0 && (size_t)targetY < _currState->size() && targetX >= 0 && (size_t)targetX < (*_currState)[0].size()) {
+                                 int tileIdxX = _pickedIdx.x + px;
+                                 int tileIdxY = _pickedIdx.y + py;
+                                 if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) {
+                                     (*_currState)[targetY][targetX] = tileIdxX + tileIdxY * _tileCount.x;
+                                 }
+                             }
+                         }
+                   }
                }
            }
            if(_isPanning) _camera += FPoint{evt.motion.xrel, evt.motion.yrel};
@@ -187,11 +257,12 @@ namespace JanSordid::SDL_Example
        const WorldState & curr = *_currState;
        FPoint mapTS = toF( _tileSize * _mapScale );
 
-       // Map Background
+       // 1. Map Hintergrund
        SDL_SetRenderDrawColor( renderer(), 30, 30, 30, 255 );
        FRect mapBG = toFRect( _camera, FPoint{(f32)curr[0].size(), (f32)curr.size()} * mapTS );
        SDL_RenderFillRect(renderer(), &mapBG);
 
+       // 2. Map Tiles Rendern
        for( size_t y = 0; y < curr.size(); ++y ) {
           for( size_t x = 0; x < curr[y].size(); ++x ) {
              int idx = curr[y][x];
@@ -204,6 +275,7 @@ namespace JanSordid::SDL_Example
        SDL_SetRenderDrawColor( renderer(), 255, 0, 0, 255 );
        SDL_RenderRect( renderer(), &mapBG );
 
+       // 3. Grid
        if(_showGrid) {
            SDL_SetRenderDrawColor( renderer(), 255, 255, 255, 50 ); SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND);
            for(size_t y=0; y<curr.size(); ++y) for(size_t x=0; x<curr[y].size(); ++x) {
@@ -211,16 +283,51 @@ namespace JanSordid::SDL_Example
                 SDL_RenderRect(renderer(), &gridR);
            }
        }
+
+       // --- NEU: GHOST PREVIEW (Vorschau unter der Maus) ---
+       float mx, my; SDL_GetMouseState(&mx, &my);
+       FPoint m = { mx, my };
+       bool overPalette = _showPalette && (m.x < toF(_tileSetSize*_paletteScale).x && m.y < toF(_tileSetSize*_paletteScale).y);
+
+       if (!overPalette && !_isSelectingPalette) {
+           Point p = toI(m - _camera) / (_tileSize * _mapScale);
+
+           // Vorschau nur zeichnen, wenn Maus über Map
+           if(p.y >= 0 && (size_t)p.y < curr.size() && p.x >= 0 && (size_t)p.x < curr[0].size()) {
+               SDL_SetTextureAlphaMod(_tileSet.get(), 150); // Transparent machen
+
+               for(int py = 0; py < _pickedSize.y; ++py) {
+                   for(int px = 0; px < _pickedSize.x; ++px) {
+                       int tileIdxX = _pickedIdx.x + px;
+                       int tileIdxY = _pickedIdx.y + py;
+
+                       // Nur valide Tiles anzeigen
+                       if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) {
+                           FRect srcR = toFRect( toF(Point{tileIdxX, tileIdxY} * _tileSize), toF(_tileSize) );
+                           FRect dstR = toFRect( FPoint{(f32)(p.x + px), (f32)(p.y + py)} * mapTS + _camera, mapTS );
+                           SDL_RenderTexture( renderer(), _tileSet.get(), &srcR, &dstR );
+                       }
+                   }
+               }
+               SDL_SetTextureAlphaMod(_tileSet.get(), 255); // Reset Alpha
+           }
+       }
+
+       // 4. Palette
        if(_showPalette) {
            FRect r = toFRect(FPoint{0,0}, toF(_tileSize*_paletteScale*_tileCount));
            SDL_SetRenderDrawColor(renderer(), 10, 10, 20, 240); SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND); SDL_RenderFillRect(renderer(), &r);
            SDL_RenderTexture(renderer(), _tileSet.get(), EntireFRect, &r);
+
            SDL_SetRenderDrawColor(renderer(), 255, 255, 0, 255);
-           FRect pickR = toFRect(toF(_tileSize*_paletteScale*_pickedIdx), toF(_tileSize*_paletteScale));
+           FPoint selectSize = toF(_tileSize * _paletteScale * _pickedSize);
+           FRect pickR = toFRect(toF(_tileSize * _paletteScale * _pickedIdx), selectSize);
            SDL_RenderRect(renderer(), &pickR);
        }
+
+       // 5. UI Text
        std::ostringstream oss;
-       oss << "Editor Mode\n[ESC] Main Menu\n[TAB] Palette\n[F8] Save [F9] Load";
+       oss << "Editor Mode\n[ESC] Main Menu\n[TAB] Palette\n[F8] Save As.. [F9] Load..\nMulti-Select: " << _pickedSize.x << "x" << _pickedSize.y;
        if(_font) {
            Owned<Surface> s(TTF_RenderText_Blended_Wrapped(_font.get(), oss.str().c_str(), 0, {255,255,255,255}, 800));
            if(s) {
@@ -233,7 +340,6 @@ namespace JanSordid::SDL_Example
        }
     }
 
-    // MAIN MENU & SETTINGS
     void MainMenuState::Init() {
         if (!_fontTitle) _fontTitle.reset(TTF_OpenFont(BasePathFont "RobotoSlab-Bold.ttf", 60));
         if (!_fontMenu)  _fontMenu.reset(TTF_OpenFont(BasePathFont "RobotoSlab-Bold.ttf", 30));
@@ -255,7 +361,7 @@ namespace JanSordid::SDL_Example
     }
     bool MainMenuState::Input(const Event& event) {
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
-            float mx = event.button.x; float my = event.button.y;
+            float mx = (float)event.button.x; float my = (float)event.button.y;
             int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
             float centerY = winH / 2.0f; float spacing = 60.0f; float startY  = centerY - (4 * spacing) / 2.0f + 50.0f;
             if (DrawButton("Spiel starten", startY, mx, my, true)) _game.ReplaceState((u8)GameStateID::Editor);
@@ -300,7 +406,7 @@ namespace JanSordid::SDL_Example
     }
     bool SettingsState::Input(const Event& event) {
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
-            float mx = event.button.x; float my = event.button.y;
+            float mx = (float)event.button.x; float my = (float)event.button.y;
             int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
             float centerY = winH / 2.0f; float spacing = 60.0f; float startY  = centerY - (3 * spacing) / 2.0f;
             std::string soundText = std::string("Ton: ") + (GlobalSettings::soundEnabled ? "AN" : "AUS");
