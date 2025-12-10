@@ -27,7 +27,10 @@ namespace JanSordid::SDL_Example
     // GLOBALE SETTINGS INIT
     bool GlobalSettings::soundEnabled = true;
     bool GlobalSettings::isFullscreen = false;
-    bool GlobalSettings::isEditorMode = true; // Default auf Editor
+    bool GlobalSettings::isEditorMode = true;
+
+    // --- NEU: Globale Variable für den Spiel-Start-Ladeprozess ---
+    static std::string g_PendingGameMap = "";
 
     // --- Hilfsfunktionen für Datei I/O ---
     void SaveMapToFile(const std::string& filename, const MapType& map) {
@@ -56,6 +59,7 @@ namespace JanSordid::SDL_Example
         return false;
     }
 
+    // Callbacks für den Editor (F8/F9)
     void SDLCALL OnMapSave(void* userdata, const char* const* filelist, int filter) {
         if (!filelist || !filelist[0]) return;
         auto* map = static_cast<MapType*>(userdata);
@@ -66,6 +70,24 @@ namespace JanSordid::SDL_Example
         if (!filelist || !filelist[0]) return;
         auto* map = static_cast<MapType*>(userdata);
         if(map) LoadMapFromFile(filelist[0], *map);
+    }
+
+    // --- NEU: Callback speziell für "Spiel Starten" ---
+    // Wenn eine Datei gewählt wurde, speichern wir den Pfad und wechseln den State.
+    void SDLCALL OnSelectMapForGame(void* userdata, const char* const* filelist, int filter) {
+        if (!filelist || !filelist[0]) return; // Abgebrochen
+
+        // 1. Pfad merken
+        g_PendingGameMap = std::string(filelist[0]);
+
+        // 2. Spiel-Modus aktivieren
+        GlobalSettings::isEditorMode = false;
+
+        // 3. State wechseln (userdata ist hier der Pointer zur Game-Instanz)
+        auto* game = static_cast<EditorGameBase*>(userdata);
+        if(game) {
+            game->ReplaceState((u8)GameStateID::Editor);
+        }
     }
 
     SDL_Surface* GenerateFallbackTileset() {
@@ -85,7 +107,7 @@ namespace JanSordid::SDL_Example
     }
 
     // =========================================================
-    // EDITOR STATE (Dient jetzt auch als GAME STATE)
+    // EDITOR STATE / GAME STATE
     // =========================================================
     void EditorState::Init() {
        SDL_Log("--- INIT STATE (EditorMode: %d) ---", GlobalSettings::isEditorMode);
@@ -132,6 +154,12 @@ namespace JanSordid::SDL_Example
            // IM SPIEL: Alles aus
            _showPalette = false;
            _showGrid = false;
+
+           // --- NEU: WENN WIR EINE MAP ZUM LADEN HABEN, JETZT LADEN ---
+           if (!g_PendingGameMap.empty()) {
+               LoadMapFromFile(g_PendingGameMap, *_currState);
+               g_PendingGameMap = ""; // Reset, damit es nicht immer neu lädt
+           }
        }
 
        _pickedSize = { 1, 1 };
@@ -142,10 +170,9 @@ namespace JanSordid::SDL_Example
     void EditorState::Destroy() {}
 
     bool EditorState::Input( const Event & evt ) {
-       const char* defaultPath = "C:\\Users\\frieb\\CLionProjects\\fantasy_dragon\\asset\\map";
+       const char* defaultPath = "C:\\Users\\frieb\\CLionProjects\\fantasy_dragon\\asset\\map\\";
 
        if (evt.type == SDL_EVENT_KEY_DOWN) {
-           // ESCAPE geht IMMER (um zurück ins Menü zu kommen)
            if (evt.key.scancode == SDL_SCANCODE_ESCAPE) { _game.ReplaceState( (u8)GameStateID::MainMenu ); return true; }
 
            // NUR IM EDITOR ERLAUBT:
@@ -336,7 +363,10 @@ namespace JanSordid::SDL_Example
         }
         return hovered && isClicked;
     }
+
     bool MainMenuState::Input(const Event& event) {
+        const char* defaultPath = "C:\\Users\\frieb\\CLionProjects\\fantasy_dragon\\asset\\map";
+
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
             float mx = (float)event.button.x; float my = (float)event.button.y;
             int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
@@ -344,8 +374,9 @@ namespace JanSordid::SDL_Example
 
             // --- HIER IST DIE LOGIK FÜR SPIEL VS EDITOR ---
             if (DrawButton("Spiel starten", startY, mx, my, true)) {
-                GlobalSettings::isEditorMode = false; // Spiel-Modus
-                _game.ReplaceState((u8)GameStateID::Editor); // Nutzt noch EditorState Klasse
+                // HIER: Öffne erst den Dialog zum Laden der Map!
+                // Wir übergeben '&_game' als userdata, damit wir in der Callback-Funktion den State wechseln können.
+                SDL_ShowOpenFileDialog(OnSelectMapForGame, &_game, window(), nullptr, 0, defaultPath, false);
             }
             else if (DrawButton("Map Creator", startY + spacing, mx, my, true)) {
                 GlobalSettings::isEditorMode = true; // Editor-Modus
@@ -356,6 +387,7 @@ namespace JanSordid::SDL_Example
         }
         return true;
     }
+
     void MainMenuState::Render(u64, Duration, f32) {
         int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
         Owned<Surface> s(TTF_RenderText_Blended(_fontTitle.get(), "FANTASY DRAGON", 0, {255, 255, 255, 255}));
