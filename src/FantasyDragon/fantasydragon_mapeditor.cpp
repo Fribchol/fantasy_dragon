@@ -365,7 +365,7 @@ namespace JanSordid::SDL_Example
     }
 
     bool MainMenuState::Input(const Event& event) {
-        const char* defaultPath = "C:\\Users\\frieb\\CLionProjects\\fantasy_dragon\\asset\\map";
+        const char* defaultPath = "C:\\Users\\frieb\\CLionProjects\\fantasy_dragon\\asset\\map\\";
 
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
             float mx = (float)event.button.x; float my = (float)event.button.y;
