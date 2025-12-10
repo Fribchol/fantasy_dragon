@@ -332,7 +332,7 @@ namespace JanSordid::SDL_Example
        // 6. UI Text
        if(_font && GlobalSettings::isEditorMode) {
            std::ostringstream oss;
-           oss << "Editor Mode\n[ESC] Main Menu\n[TAB] Palette\n[F8] Save [F9] Load";
+           oss << "Editor Mode\n[ESC] Main Menu\n[TAB] Palette\n [F1] Map verkleinern\n [F2] Map vergrößern\n [F6] Grid aus/an \n[F8] Save [F9] Load";
            Owned<Surface> s(TTF_RenderText_Blended_Wrapped(_font.get(), oss.str().c_str(), 0, {255,255,255,255}, 800));
            if(s) {
                Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
