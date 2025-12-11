@@ -2,6 +2,10 @@
 
 #include "sor/sdl_game.hpp"
 #include "sor/sdl_smartptr.hpp"
+
+// WICHTIG: Hier binden wir den Spieler ein!
+#include "player.hpp"
+
 #include <chrono>
 #include <vector>
 #include <array>
@@ -49,6 +53,8 @@ namespace JanSordid::SDL_Example
 
     using EditorGameBase = JanSordid::SDL::Game<>;
 
+    // MapType kommt jetzt aus player.hpp, wir definieren es hier NICHT neu.
+
     // IDs für alle Zustände im Spiel
     enum class GameStateID : std::uint8_t {
         MainMenu = 0,
@@ -61,7 +67,7 @@ namespace JanSordid::SDL_Example
     struct GlobalSettings {
         static bool soundEnabled;
         static bool isFullscreen;
-        static bool isEditorMode; // NEU: Unterscheidet Spiel vs Editor
+        static bool isEditorMode;
     };
 
     // =========================================================
@@ -78,7 +84,9 @@ namespace JanSordid::SDL_Example
 
         Owned<Font>    _font;
         Owned<Texture> _tileSet;
-        using WorldState = Array<Array<int, 40>, 20>;
+
+        // Wir nutzen den MapType aus player.hpp
+        using WorldState = MapType;
 
         const bool _doGenerateEmptyMap = true;
         WorldState _worldState1;
@@ -89,6 +97,10 @@ namespace JanSordid::SDL_Example
         Point  _tileSize;
         Point  _tileCount;
         FPoint _camera;
+
+        // --- HIER IST DIE FEHLENDE VARIABLE ---
+        Player _player;
+        // --------------------------------------
 
         Point  _pickedIdx          = Point{ 0, 0 };
         Point  _pickedSize         = Point{ 1, 1 };
@@ -102,7 +114,7 @@ namespace JanSordid::SDL_Example
         bool   _showGrid     = false;
         bool   _showPalette  = false;
 
-        constexpr static Duration UpdateDeltaTime = 100ms;
+        constexpr static Duration UpdateDeltaTime = 16ms; // ca 60 FPS
         Duration _nextUpdateTime = {};
 
     public:

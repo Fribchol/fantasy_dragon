@@ -5,6 +5,7 @@
 #include <string>
 #include <array>
 #include <algorithm>
+#include <cmath> // Wichtig für Berechnungen
 
 #if __has_include("hsnr64/offset.hpp")
     #include "hsnr64/offset.hpp"
@@ -22,14 +23,15 @@ using JanSordid::SDL::EntireFRect;
 
 namespace JanSordid::SDL_Example
 {
-    using MapType = std::array<std::array<int, 40>, 20>;
+    // HINWEIS: 'MapType' ist jetzt in player.hpp definiert und durch den Header hier verfügbar.
+    // Wir müssen es hier nicht erneut definieren.
 
     // GLOBALE SETTINGS INIT
     bool GlobalSettings::soundEnabled = true;
     bool GlobalSettings::isFullscreen = false;
     bool GlobalSettings::isEditorMode = true;
 
-    // --- NEU: Globale Variable für den Spiel-Start-Ladeprozess ---
+    // --- Globale Variable für den Spiel-Start-Ladeprozess ---
     static std::string g_PendingGameMap = "";
 
     // --- Hilfsfunktionen für Datei I/O ---
@@ -72,8 +74,7 @@ namespace JanSordid::SDL_Example
         if(map) LoadMapFromFile(filelist[0], *map);
     }
 
-    // --- NEU: Callback speziell für "Spiel Starten" ---
-    // Wenn eine Datei gewählt wurde, speichern wir den Pfad und wechseln den State.
+    // --- Callback speziell für "Spiel Starten" ---
     void SDLCALL OnSelectMapForGame(void* userdata, const char* const* filelist, int filter) {
         if (!filelist || !filelist[0]) return; // Abgebrochen
 
@@ -83,7 +84,7 @@ namespace JanSordid::SDL_Example
         // 2. Spiel-Modus aktivieren
         GlobalSettings::isEditorMode = false;
 
-        // 3. State wechseln (userdata ist hier der Pointer zur Game-Instanz)
+        // 3. State wechseln
         auto* game = static_cast<EditorGameBase*>(userdata);
         if(game) {
             game->ReplaceState((u8)GameStateID::Editor);
@@ -132,13 +133,20 @@ namespace JanSordid::SDL_Example
        }
 
        if( _doGenerateEmptyMap ) {
-          const int FillTile = 0; const int BorderTile = 1;
+          const int FillTile = 0; const int BorderTile = 0;
           for( auto & row : *_currState ) { row.fill( FillTile ); *row.begin() = BorderTile; *row.rbegin() = BorderTile; }
           (*_currState->begin()).fill( BorderTile ); (*_currState->rbegin()).fill( BorderTile );
        }
 
+       // --- NEU: PLAYER INIT ---
+       if (!GlobalSettings::isEditorMode) {
+           _player.Init(renderer());
+           _mapScale = 2; // Zoom im Spiel
+       } else {
+           _mapScale = 2; // Zoom im Editor
+       }
+
        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-       _mapScale = 2;
        float mapPixelW = (float)( (*_currState)[0].size() * 16 * _mapScale );
        float mapPixelH = (float)( (*_currState).size() * 16 * _mapScale );
        _camera.x = -((winW / 2.0f) - (mapPixelW / 2.0f));
@@ -146,7 +154,6 @@ namespace JanSordid::SDL_Example
 
        _paletteScale = 1;
 
-       // SETTINGS ANHAND DES MODUS
        if (GlobalSettings::isEditorMode) {
            _showPalette = true;
            _showGrid = true;
@@ -155,10 +162,10 @@ namespace JanSordid::SDL_Example
            _showPalette = false;
            _showGrid = false;
 
-           // --- NEU: WENN WIR EINE MAP ZUM LADEN HABEN, JETZT LADEN ---
+           // --- MAP LADEN ---
            if (!g_PendingGameMap.empty()) {
                LoadMapFromFile(g_PendingGameMap, *_currState);
-               g_PendingGameMap = ""; // Reset, damit es nicht immer neu lädt
+               g_PendingGameMap = "";
            }
        }
 
@@ -184,6 +191,12 @@ namespace JanSordid::SDL_Example
                if (evt.key.scancode == SDL_SCANCODE_F2) _mapScale = 2;
                if (evt.key.scancode == SDL_SCANCODE_F6 && evt.key.repeat == 0) _showGrid = !_showGrid;
            }
+       }
+
+       // --- NEU: PLAYER INPUT ---
+       // Nur im Spiel-Modus leiten wir Tasten an den Spieler weiter
+       if (!GlobalSettings::isEditorMode) {
+           _player.Input(evt);
        }
 
        // MAUSKLICKS (Nur im Editor zum Malen)
@@ -257,7 +270,21 @@ namespace JanSordid::SDL_Example
        return true;
     }
 
-    void EditorState::Update( u64, Duration, f32 ) {}
+    void EditorState::Update( u64, Duration, f32 deltaT ) {
+        // --- NEU: PLAYER UPDATE ---
+        if (!GlobalSettings::isEditorMode) {
+            _player.Update(deltaT, *_currState);
+
+            // Kamera verfolgt den Spieler
+            int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
+            float targetCamX = -((_player.position.x * _mapScale) - (winW / 2.0f));
+            float targetCamY = -((_player.position.y * _mapScale) - (winH / 2.0f));
+
+            // Weiche Kamera-Bewegung (Lerp)
+            _camera.x += (targetCamX - _camera.x) * 5.0f * deltaT;
+            _camera.y += (targetCamY - _camera.y) * 5.0f * deltaT;
+        }
+    }
 
     void EditorState::Render( u64 frames, Duration, f32 deltaTNeeded ) {
        const WorldState & curr = *_currState;
@@ -272,11 +299,17 @@ namespace JanSordid::SDL_Example
        for( size_t y = 0; y < curr.size(); ++y ) {
           for( size_t x = 0; x < curr[y].size(); ++x ) {
              int idx = curr[y][x];
+             if (idx == 0) continue; // Luft wird nicht gezeichnet
              Point tIdx = { idx % _tileCount.x, idx / _tileCount.x };
              FRect srcR = toFRect( toF(tIdx * _tileSize), toF(_tileSize) );
              FRect dstR = toFRect( FPoint{(f32)x, (f32)y} * mapTS + _camera, mapTS );
              SDL_RenderTexture( renderer(), _tileSet.get(), &srcR, &dstR );
           }
+       }
+
+       // --- NEU: PLAYER RENDER ---
+       if (!GlobalSettings::isEditorMode) {
+           _player.Render(renderer(), _camera, _mapScale);
        }
 
        // RAHMEN nur im Editor
@@ -375,7 +408,6 @@ namespace JanSordid::SDL_Example
             // --- HIER IST DIE LOGIK FÜR SPIEL VS EDITOR ---
             if (DrawButton("Spiel starten", startY, mx, my, true)) {
                 // HIER: Öffne erst den Dialog zum Laden der Map!
-                // Wir übergeben '&_game' als userdata, damit wir in der Callback-Funktion den State wechseln können.
                 SDL_ShowOpenFileDialog(OnSelectMapForGame, &_game, window(), nullptr, 0, defaultPath, false);
             }
             else if (DrawButton("Map Creator", startY + spacing, mx, my, true)) {

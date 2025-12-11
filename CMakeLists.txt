@@ -132,11 +132,15 @@ add_executable(fantasydragon
         src/sor/sdl_core.cpp
         src/sor/sdl_game.cpp
 
+
         # DEIN NEUER EINSTIEGSPUNKT (stellt sicher, dass die neue main.cpp genutzt wird)
         src/FantasyDragon/main.cpp
 
         # DEIN EDITOR CODE
         src/FantasyDragon/fantasydragon_mapeditor.cpp
+
+        # Player
+        src/FantasyDragon/player.cpp
 
         # HELFER (Schriftarten und Kacheln für den Editor)
         src/hsnr64/tilefont.cpp
