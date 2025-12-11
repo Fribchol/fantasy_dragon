@@ -142,6 +142,9 @@ add_executable(fantasydragon
         # Player
         src/FantasyDragon/player.cpp
 
+        # Gegner
+        src/FantasyDragon/enemy.cpp
+
         # HELFER (Schriftarten und Kacheln für den Editor)
         src/hsnr64/tilefont.cpp
         src/hsnr64/tiles.cpp

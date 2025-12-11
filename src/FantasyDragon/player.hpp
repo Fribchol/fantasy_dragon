@@ -8,7 +8,9 @@
 
 namespace JanSordid::SDL_Example
 {
+    // MapType Definition
     using MapType = std::array<std::array<int, 40>, 20>;
+
     using u8  = std::uint8_t;
     using f32 = float;
 
@@ -23,7 +25,6 @@ namespace JanSordid::SDL_Example
         Idle = 0,
         Run = 1,
         Jump = 2,
-
         Attack1 = 4,
         Attack2 = 5,
         Attack3 = 6,
@@ -36,6 +37,11 @@ namespace JanSordid::SDL_Example
 
         float z = 0.0f;
         float velZ = 0.0f;
+
+        // --- NEU: KAMPF STATS ---
+        int hp = 100;
+        float hitTimer = 0.0f; // Für Unverwundbarkeit
+        // ------------------------
 
         FPoint size = { 16.0f, 16.0f };
         FPoint spriteOffset = { -17.0f, -28.0f };
@@ -50,10 +56,16 @@ namespace JanSordid::SDL_Example
         Owned<Texture> spriteSheet;
         Owned<Texture> shadowTexture;
 
+        // Haupt-Funktionen
         void Init(SDL_Renderer* renderer);
         void Update(float dt, const MapType& map);
         void Input(const Event& evt);
         void Render(SDL_Renderer* renderer, FPoint camera, int scale);
+
+        // --- NEU: KAMPF FUNKTIONEN ---
+        void TakeDamage(int amount);
+        FRect GetAttackHitbox() const;
+        // -----------------------------
 
     private:
         bool CheckCollision(const FRect& rect, const MapType& map);

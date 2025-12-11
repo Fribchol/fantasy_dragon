@@ -5,7 +5,7 @@
 #include <string>
 #include <array>
 #include <algorithm>
-#include <cmath> // Wichtig für Berechnungen
+#include <cmath>
 
 #if __has_include("hsnr64/offset.hpp")
     #include "hsnr64/offset.hpp"
@@ -23,15 +23,11 @@ using JanSordid::SDL::EntireFRect;
 
 namespace JanSordid::SDL_Example
 {
-    // HINWEIS: 'MapType' ist jetzt in player.hpp definiert und durch den Header hier verfügbar.
-    // Wir müssen es hier nicht erneut definieren.
-
     // GLOBALE SETTINGS INIT
-    bool GlobalSettings::soundEnabled = true;
+    int GlobalSettings::musicVolume = 64;
     bool GlobalSettings::isFullscreen = false;
     bool GlobalSettings::isEditorMode = true;
 
-    // --- Globale Variable für den Spiel-Start-Ladeprozess ---
     static std::string g_PendingGameMap = "";
 
     // --- Hilfsfunktionen für Datei I/O ---
@@ -44,8 +40,6 @@ namespace JanSordid::SDL_Example
             }
             file.close();
             SDL_Log("Map gespeichert: %s", filename.c_str());
-        } else {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Fehler beim Speichern: %s", filename.c_str());
         }
     }
 
@@ -57,11 +51,9 @@ namespace JanSordid::SDL_Example
             SDL_Log("Map geladen: %s", filename.c_str());
             return true;
         }
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Fehler beim Laden: %s", filename.c_str());
         return false;
     }
 
-    // Callbacks für den Editor (F8/F9)
     void SDLCALL OnMapSave(void* userdata, const char* const* filelist, int filter) {
         if (!filelist || !filelist[0]) return;
         auto* map = static_cast<MapType*>(userdata);
@@ -74,21 +66,12 @@ namespace JanSordid::SDL_Example
         if(map) LoadMapFromFile(filelist[0], *map);
     }
 
-    // --- Callback speziell für "Spiel Starten" ---
     void SDLCALL OnSelectMapForGame(void* userdata, const char* const* filelist, int filter) {
-        if (!filelist || !filelist[0]) return; // Abgebrochen
-
-        // 1. Pfad merken
+        if (!filelist || !filelist[0]) return;
         g_PendingGameMap = std::string(filelist[0]);
-
-        // 2. Spiel-Modus aktivieren
         GlobalSettings::isEditorMode = false;
-
-        // 3. State wechseln
         auto* game = static_cast<EditorGameBase*>(userdata);
-        if(game) {
-            game->ReplaceState((u8)GameStateID::Editor);
-        }
+        if(game) game->ReplaceState((u8)GameStateID::Editor);
     }
 
     SDL_Surface* GenerateFallbackTileset() {
@@ -108,7 +91,7 @@ namespace JanSordid::SDL_Example
     }
 
     // =========================================================
-    // EDITOR STATE / GAME STATE
+    // EDITOR STATE
     // =========================================================
     void EditorState::Init() {
        SDL_Log("--- INIT STATE (EditorMode: %d) ---", GlobalSettings::isEditorMode);
@@ -138,12 +121,12 @@ namespace JanSordid::SDL_Example
           (*_currState->begin()).fill( BorderTile ); (*_currState->rbegin()).fill( BorderTile );
        }
 
-       // --- NEU: PLAYER INIT ---
        if (!GlobalSettings::isEditorMode) {
            _player.Init(renderer());
-           _mapScale = 2; // Zoom im Spiel
+           _bee.Init(renderer(), 300, 200);
+           _mapScale = 2;
        } else {
-           _mapScale = 2; // Zoom im Editor
+           _mapScale = 2;
        }
 
        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
@@ -158,11 +141,8 @@ namespace JanSordid::SDL_Example
            _showPalette = true;
            _showGrid = true;
        } else {
-           // IM SPIEL: Alles aus
            _showPalette = false;
            _showGrid = false;
-
-           // --- MAP LADEN ---
            if (!g_PendingGameMap.empty()) {
                LoadMapFromFile(g_PendingGameMap, *_currState);
                g_PendingGameMap = "";
@@ -182,7 +162,6 @@ namespace JanSordid::SDL_Example
        if (evt.type == SDL_EVENT_KEY_DOWN) {
            if (evt.key.scancode == SDL_SCANCODE_ESCAPE) { _game.ReplaceState( (u8)GameStateID::MainMenu ); return true; }
 
-           // NUR IM EDITOR ERLAUBT:
            if (GlobalSettings::isEditorMode) {
                if (evt.key.scancode == SDL_SCANCODE_TAB && evt.key.repeat == 0) _showPalette = !_showPalette;
                if (evt.key.scancode == SDL_SCANCODE_F8) SDL_ShowSaveFileDialog(OnMapSave, _currState, window(), nullptr, 0, defaultPath);
@@ -193,13 +172,10 @@ namespace JanSordid::SDL_Example
            }
        }
 
-       // --- NEU: PLAYER INPUT ---
-       // Nur im Spiel-Modus leiten wir Tasten an den Spieler weiter
        if (!GlobalSettings::isEditorMode) {
            _player.Input(evt);
        }
 
-       // MAUSKLICKS (Nur im Editor zum Malen)
        if (GlobalSettings::isEditorMode && evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_LEFT) {
             FPoint m = { (f32)evt.button.x, (f32)evt.button.y };
             bool clickedInsidePalette = false;
@@ -271,16 +247,23 @@ namespace JanSordid::SDL_Example
     }
 
     void EditorState::Update( u64, Duration, f32 deltaT ) {
-        // --- NEU: PLAYER UPDATE ---
         if (!GlobalSettings::isEditorMode) {
             _player.Update(deltaT, *_currState);
+            _bee.Update(deltaT, _player);
 
-            // Kamera verfolgt den Spieler
+            if (_player.isAttacking && _player.currentFrame >= 2 && _player.currentFrame <= 4) {
+                FRect swordBox = _player.GetAttackHitbox();
+                FRect beeBox = _bee.GetHitbox();
+                if (SDL_HasRectIntersectionFloat(&swordBox, &beeBox)) {
+                    if (_bee.z < 40) {
+                        _bee.TakeDamage(10);
+                    }
+                }
+            }
+
             int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
             float targetCamX = -((_player.position.x * _mapScale) - (winW / 2.0f));
             float targetCamY = -((_player.position.y * _mapScale) - (winH / 2.0f));
-
-            // Weiche Kamera-Bewegung (Lerp)
             _camera.x += (targetCamX - _camera.x) * 5.0f * deltaT;
             _camera.y += (targetCamY - _camera.y) * 5.0f * deltaT;
         }
@@ -290,16 +273,14 @@ namespace JanSordid::SDL_Example
        const WorldState & curr = *_currState;
        FPoint mapTS = toF( _tileSize * _mapScale );
 
-       // 1. Map Hintergrund
        SDL_SetRenderDrawColor( renderer(), 30, 30, 30, 255 );
        FRect mapBG = toFRect( _camera, FPoint{(f32)curr[0].size(), (f32)curr.size()} * mapTS );
        SDL_RenderFillRect(renderer(), &mapBG);
 
-       // 2. Map Tiles
        for( size_t y = 0; y < curr.size(); ++y ) {
           for( size_t x = 0; x < curr[y].size(); ++x ) {
              int idx = curr[y][x];
-             if (idx == 0) continue; // Luft wird nicht gezeichnet
+             if (idx == 0) continue;
              Point tIdx = { idx % _tileCount.x, idx / _tileCount.x };
              FRect srcR = toFRect( toF(tIdx * _tileSize), toF(_tileSize) );
              FRect dstR = toFRect( FPoint{(f32)x, (f32)y} * mapTS + _camera, mapTS );
@@ -307,18 +288,21 @@ namespace JanSordid::SDL_Example
           }
        }
 
-       // --- NEU: PLAYER RENDER ---
        if (!GlobalSettings::isEditorMode) {
-           _player.Render(renderer(), _camera, _mapScale);
+           if (_player.position.y < _bee.position.y) {
+               _player.Render(renderer(), _camera, _mapScale);
+               _bee.Render(renderer(), _camera, _mapScale);
+           } else {
+               _bee.Render(renderer(), _camera, _mapScale);
+               _player.Render(renderer(), _camera, _mapScale);
+           }
        }
 
-       // RAHMEN nur im Editor
        if(GlobalSettings::isEditorMode) {
            SDL_SetRenderDrawColor( renderer(), 255, 0, 0, 255 );
            SDL_RenderRect( renderer(), &mapBG );
        }
 
-       // 3. Grid (Nur Editor)
        if(GlobalSettings::isEditorMode && _showGrid) {
            SDL_SetRenderDrawColor( renderer(), 255, 255, 255, 50 ); SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND);
            for(size_t y=0; y<curr.size(); ++y) for(size_t x=0; x<curr[y].size(); ++x) {
@@ -327,11 +311,11 @@ namespace JanSordid::SDL_Example
            }
        }
 
-       // 4. Ghost Preview (Nur Editor)
        if(GlobalSettings::isEditorMode) {
            float mx, my; SDL_GetMouseState(&mx, &my);
            FPoint m = { mx, my };
            bool overPalette = _showPalette && (m.x < toF(_tileSetSize*_paletteScale).x && m.y < toF(_tileSetSize*_paletteScale).y);
+
            if (!overPalette && !_isSelectingPalette) {
                Point p = toI(m - _camera) / (_tileSize * _mapScale);
                if(p.y >= 0 && (size_t)p.y < curr.size() && p.x >= 0 && (size_t)p.x < curr[0].size()) {
@@ -351,7 +335,6 @@ namespace JanSordid::SDL_Example
            }
        }
 
-       // 5. Palette (Nur Editor)
        if(GlobalSettings::isEditorMode && _showPalette) {
            FRect r = toFRect(FPoint{0,0}, toF(_tileSize*_paletteScale*_tileCount));
            SDL_SetRenderDrawColor(renderer(), 10, 10, 20, 240); SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND); SDL_RenderFillRect(renderer(), &r);
@@ -362,7 +345,6 @@ namespace JanSordid::SDL_Example
            SDL_RenderRect(renderer(), &pickR);
        }
 
-       // 6. UI Text
        if(_font && GlobalSettings::isEditorMode) {
            std::ostringstream oss;
            oss << "Editor Mode\n[ESC] Main Menu\n[TAB] Palette\n [F1] Map verkleinern\n [F2] Map vergrößern\n [F6] Grid aus/an \n[F8] Save [F9] Load";
@@ -377,10 +359,54 @@ namespace JanSordid::SDL_Example
        }
     }
 
+    // =========================================================
+    // MAIN MENU STATE
+    // =========================================================
     void MainMenuState::Init() {
         if (!_fontTitle) _fontTitle.reset(TTF_OpenFont(BasePathFont "RobotoSlab-Bold.ttf", 60));
         if (!_fontMenu)  _fontMenu.reset(TTF_OpenFont(BasePathFont "RobotoSlab-Bold.ttf", 30));
+
+        if (!_background) {
+            const char* filename = BasePathGraphic "menu_background.png";
+            auto* surf = IMG_Load(filename);
+            if (surf) {
+                _background.reset(SDL_CreateTextureFromSurface(renderer(), surf));
+                SDL_DestroySurface(surf);
+            }
+        }
+
+        // --- AUDIO FIX ---
+        // 1. SDL Audio Subsystem initialisieren (WICHTIG!)
+        if (SDL_Init(SDL_INIT_AUDIO) < 0) {
+            SDL_Log("SDL_Init(AUDIO) fehlgeschlagen: %s", SDL_GetError());
+        }
+
+        // 2. Mixer öffnen mit 'nullptr' Spec für Auto-Detect
+        if (Mix_OpenAudio(0, nullptr) == 0) { // 0 Success in SDL3 Mixer
+            const char* musicFile = BasePathAudio "hauptmenu_sound.wav"; // WAV nehmen, da MP3 oft DLLs fehlt
+            _bgMusic = Mix_LoadMUS(musicFile);
+            if (_bgMusic) {
+                Mix_VolumeMusic(GlobalSettings::musicVolume);
+                Mix_PlayMusic(_bgMusic, -1);
+                SDL_Log("Musik gestartet: %s", musicFile);
+            } else {
+                SDL_Log("Fehler beim Laden der Musik: %s -> %s", musicFile, SDL_GetError());
+            }
+        } else {
+            SDL_Log("Mixer OpenAudio fehlgeschlagen: %s", SDL_GetError());
+        }
     }
+
+    void MainMenuState::Destroy() {
+        if (_bgMusic) {
+            Mix_HaltMusic();
+            Mix_FreeMusic(_bgMusic);
+            _bgMusic = nullptr;
+        }
+        Mix_CloseAudio();
+        Mix_Quit();
+    }
+
     bool MainMenuState::DrawButton(const char* text, float y, float mouseX, float mouseY, bool isClicked) {
         Color c = { 200, 200, 200, 255 }; bool hovered = false;
         int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
@@ -399,20 +425,16 @@ namespace JanSordid::SDL_Example
 
     bool MainMenuState::Input(const Event& event) {
         const char* defaultPath = "C:\\Users\\frieb\\CLionProjects\\fantasy_dragon\\asset\\map\\";
-
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
             float mx = (float)event.button.x; float my = (float)event.button.y;
             int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
             float centerY = winH / 2.0f; float spacing = 60.0f; float startY  = centerY - (4 * spacing) / 2.0f + 50.0f;
 
-            // --- HIER IST DIE LOGIK FÜR SPIEL VS EDITOR ---
             if (DrawButton("Spiel starten", startY, mx, my, true)) {
-                // HIER: Öffne erst den Dialog zum Laden der Map!
                 SDL_ShowOpenFileDialog(OnSelectMapForGame, &_game, window(), nullptr, 0, defaultPath, false);
             }
             else if (DrawButton("Map Creator", startY + spacing, mx, my, true)) {
-                GlobalSettings::isEditorMode = true; // Editor-Modus
-                _game.ReplaceState((u8)GameStateID::Editor);
+                GlobalSettings::isEditorMode = true; _game.ReplaceState((u8)GameStateID::Editor);
             }
             else if (DrawButton("Settings", startY + spacing*2, mx, my, true)) _game.PushState((u8)GameStateID::Settings);
             else if (DrawButton("Beenden", startY + spacing*3, mx, my, true)) { SDL_Event quit; quit.type = SDL_EVENT_QUIT; SDL_PushEvent(&quit); }
@@ -422,6 +444,14 @@ namespace JanSordid::SDL_Example
 
     void MainMenuState::Render(u64, Duration, f32) {
         int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
+
+        if (_background) {
+            SDL_RenderTexture(renderer(), _background.get(), nullptr, nullptr);
+        } else {
+            SDL_SetRenderDrawColor(renderer(), 30, 30, 40, 255);
+            SDL_RenderClear(renderer());
+        }
+
         Owned<Surface> s(TTF_RenderText_Blended(_fontTitle.get(), "FANTASY DRAGON", 0, {255, 255, 255, 255}));
         if(s) {
             Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
@@ -437,7 +467,68 @@ namespace JanSordid::SDL_Example
         DrawButton("Beenden",       startY + spacing*3, mx, my, false);
     }
 
-    void SettingsState::Init() { if (!_font) _font.reset(TTF_OpenFont(BasePathFont "RobotoSlab-Bold.ttf", 30)); }
+    // =========================================================
+    // SETTINGS STATE
+    // =========================================================
+    void SettingsState::Init() {
+        if (!_font) _font.reset(TTF_OpenFont(BasePathFont "RobotoSlab-Bold.ttf", 30));
+
+        if (!_background) {
+            const char* filename = BasePathGraphic "menu_settings.png";
+            auto* surf = IMG_Load(filename);
+            if (surf) {
+                _background.reset(SDL_CreateTextureFromSurface(renderer(), surf));
+                SDL_DestroySurface(surf);
+            }
+        }
+    }
+
+    bool SettingsState::DrawSlider(const char* label, float y, float mouseX, float mouseY, bool isMouseDown) {
+        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
+
+        float sliderWidth = 300.0f;
+        float sliderHeight = 10.0f;
+        float sliderX = (winW / 2.0f) - (sliderWidth / 2.0f);
+        float sliderY = y + 40.0f;
+
+        Owned<Surface> s(TTF_RenderText_Blended(_font.get(), label, 0, {200, 200, 200, 255}));
+        if(s) {
+            float tw = (float)s->w; float th = (float)s->h;
+            FRect tRect = { (winW / 2.0f) - (tw/2.0f), y, tw, th };
+            Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
+            SDL_RenderTexture(renderer(), t.get(), nullptr, &tRect);
+        }
+
+        FRect track = { sliderX, sliderY, sliderWidth, sliderHeight };
+        SDL_SetRenderDrawColor(renderer(), 100, 100, 100, 255);
+        SDL_RenderFillRect(renderer(), &track);
+
+        float pct = (float)GlobalSettings::musicVolume / 128.0f;
+        float knobX = sliderX + (pct * sliderWidth);
+        FRect knob = { knobX - 10.0f, sliderY - 5.0f, 20.0f, 20.0f };
+
+        SDL_SetRenderDrawColor(renderer(), 255, 200, 0, 255);
+        SDL_RenderFillRect(renderer(), &knob);
+
+        if (isMouseDown) {
+            if (mouseX >= sliderX && mouseX <= sliderX + sliderWidth &&
+                mouseY >= sliderY - 20.0f && mouseY <= sliderY + 30.0f)
+            {
+                float newPct = (mouseX - sliderX) / sliderWidth;
+                if (newPct < 0) newPct = 0;
+                if (newPct > 1) newPct = 1;
+
+                int newVol = (int)(newPct * 128.0f);
+                if (newVol != GlobalSettings::musicVolume) {
+                    GlobalSettings::musicVolume = newVol;
+                    Mix_VolumeMusic(newVol);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     bool SettingsState::DrawButton(const char* text, float y, float mouseX, float mouseY, bool isClicked) {
         Color c = { 200, 200, 200, 255 }; bool hovered = false;
         int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
@@ -453,31 +544,55 @@ namespace JanSordid::SDL_Example
         }
         return hovered && isClicked;
     }
+
     bool SettingsState::Input(const Event& event) {
+        float mx = 0, my = 0;
+        SDL_GetMouseState(&mx, &my);
+        bool isDown = (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK);
+
+        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
+        float centerY = winH / 2.0f; float spacing = 80.0f; float startY = centerY - (3 * spacing) / 2.0f;
+
+        if (isDown) {
+            std::string volTxt = "Lautstaerke: " + std::to_string((int)((GlobalSettings::musicVolume / 128.0f) * 100)) + "%";
+            DrawSlider(volTxt.c_str(), startY, mx, my, true);
+        }
+
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
-            float mx = (float)event.button.x; float my = (float)event.button.y;
-            int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-            float centerY = winH / 2.0f; float spacing = 60.0f; float startY  = centerY - (3 * spacing) / 2.0f;
-            std::string soundText = std::string("Ton: ") + (GlobalSettings::soundEnabled ? "AN" : "AUS");
-            if (DrawButton(soundText.c_str(), startY, mx, my, true)) GlobalSettings::soundEnabled = !GlobalSettings::soundEnabled;
+            float clickX = (float)event.button.x;
+            float clickY = (float)event.button.y;
+
             std::string screenText = std::string("Modus: ") + (GlobalSettings::isFullscreen ? "Vollbild" : "Fenster");
-            if (DrawButton(screenText.c_str(), startY + spacing, mx, my, true)) {
+            if (DrawButton(screenText.c_str(), startY + spacing, clickX, clickY, true)) {
                 GlobalSettings::isFullscreen = !GlobalSettings::isFullscreen;
                 SDL_SetWindowFullscreen(window(), GlobalSettings::isFullscreen ? SDL_WINDOW_FULLSCREEN : 0);
             }
-            if (DrawButton("Zurueck", startY + spacing*2, mx, my, true)) _game.PopState();
+            if (DrawButton("Zurueck", startY + spacing*2, clickX, clickY, true)) _game.PopState();
         }
+
         if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE) _game.PopState();
         return true;
     }
+
     void SettingsState::Render(u64, Duration, f32) {
-        float mx, my; SDL_GetMouseState(&mx, &my);
         int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-        float centerY = winH / 2.0f; float spacing = 60.0f; float startY  = centerY - (3 * spacing) / 2.0f;
-        std::string soundText = std::string("Ton: ") + (GlobalSettings::soundEnabled ? "AN" : "AUS");
-        DrawButton(soundText.c_str(), startY, mx, my, false);
+
+        if (_background) {
+            SDL_RenderTexture(renderer(), _background.get(), nullptr, nullptr);
+        } else {
+            SDL_SetRenderDrawColor(renderer(), 40, 30, 30, 255);
+            SDL_RenderClear(renderer());
+        }
+
+        float mx, my; SDL_GetMouseState(&mx, &my);
+        float centerY = winH / 2.0f; float spacing = 80.0f; float startY = centerY - (3 * spacing) / 2.0f;
+
+        std::string volTxt = "Lautstärke: " + std::to_string((int)((GlobalSettings::musicVolume / 128.0f) * 100)) + "%";
+        DrawSlider(volTxt.c_str(), startY, mx, my, false);
+
         std::string screenText = std::string("Modus: ") + (GlobalSettings::isFullscreen ? "Vollbild" : "Fenster");
         DrawButton(screenText.c_str(), startY + spacing, mx, my, false);
-        DrawButton("Zurueck", startY + spacing*2, mx, my, false);
+
+        DrawButton("Zurück", startY + spacing*2, mx, my, false);
     }
 }

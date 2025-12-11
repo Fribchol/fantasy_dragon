@@ -4,7 +4,7 @@
 #include <cmath>
 
 #ifndef BasePathGraphic
-#define BasePathGraphic "assets/graphics/"
+#define BasePathGraphic "asset/graphics/"
 #endif
 
 namespace JanSordid::SDL_Example
@@ -47,6 +47,28 @@ namespace JanSordid::SDL_Example
         velocity = { 0.0f, 0.0f };
         z = 0.0f;
         velZ = 0.0f;
+
+        // NEU: Init Stats
+        hp = 100;
+        hitTimer = 0.0f;
+    }
+
+    // --- NEU: SCHADEN NEHMEN ---
+    void Player::TakeDamage(int amount) {
+        if (hitTimer > 0.0f) return; // Unverwundbar
+        hp -= amount;
+        hitTimer = 0.5f; // 0.5 Sekunden Schutz (blinkt rot/transparent)
+        velocity.y = -50.0f; // Kleiner Rückstoß
+    }
+
+    // --- NEU: HITBOX FÜR ANGRIFF ---
+    FRect Player::GetAttackHitbox() const {
+        if (!isAttacking) return {0,0,0,0};
+
+        // Einfache Annahme: Schwert trifft vor dem Spieler
+        float reach = 30.0f;
+        float xOff = facingRight ? size.x : -reach;
+        return { position.x + xOff, position.y, reach, size.y };
     }
 
     void Player::Input(const Event& evt) {
@@ -94,9 +116,12 @@ namespace JanSordid::SDL_Example
     }
 
     void Player::Update(float dt, const MapType& map) {
-        const float GRAVITY = 980.0f;
-        const float MOVE_SPEED_X = 120.0f;
-        const float MOVE_SPEED_Y = 80.0f;
+        // NEU: Timer runterzählen
+        if (hitTimer > 0.0f) hitTimer -= dt;
+
+        const float GRAVITY = 550.0f;
+        const float MOVE_SPEED_X = 80.0f;
+        const float MOVE_SPEED_Y = 50.0f;
 
         const bool* state = SDL_GetKeyboardState(nullptr);
 
@@ -148,20 +173,20 @@ namespace JanSordid::SDL_Example
 
         switch(currentAnim) {
             case PlayerAnim::Idle:
-                startCol = 0; frameCount = 4; frameTime = 0.15f;
+                startCol = 0; frameCount = 4; frameTime = 0.32f;
                 break;
 
             case PlayerAnim::Run:
-                startCol = 1; frameCount = 5; frameTime = 0.1f;
+                startCol = 1; frameCount = 5; frameTime = 0.32f;
                 break;
 
             case PlayerAnim::Crouch:
-                startCol = 4; frameCount = 3;
+                startCol = 4; frameCount = 3; frameTime = 0.32f;
                 break;
 
             case PlayerAnim::Jump:
                 startCol = 0;
-                frameCount = 10; frameTime = 0.12f;// 7 Frames (Reihe 2) + 2 Frames (Reihe 3) = 9 Total
+                frameCount = 10; frameTime = 0.16f;
                 loop = false;
                 break;
 
@@ -199,6 +224,9 @@ namespace JanSordid::SDL_Example
     void Player::Render(SDL_Renderer* renderer, FPoint camera, int scale) {
         if (!spriteSheet) return;
 
+        // NEU: Blinken wenn getroffen
+        if (hitTimer > 0.0f && (int)(hitTimer * 10) % 2 == 0) return;
+
         // Schatten
         if (shadowTexture) {
             float shadowW = 20.0f * scale; float shadowH = 10.0f * scale;
@@ -227,43 +255,31 @@ namespace JanSordid::SDL_Example
             case PlayerAnim::Crouch:  row = 0; break;
 
             case PlayerAnim::Jump:
-                // --- SPEZIAL LOGIK FÜR JUMP ÜBER 2 REIHEN ---
-                // Annahme: Eine Reihe hat 7 Bilder (Index 0 bis 6)
+                // --- SPEZIAL LOGIK FÜR JUMP ---
                 if (currentFrame < 7) {
-                    // Die ersten 7 Bilder sind in Reihe 2
                     row = 2;
                     col = currentFrame;
                 } else {
-                    // Ab Bild 8 (Index 7) sind wir in Reihe 3
                     row = 3;
-                    col = currentFrame - 7; // Reset X auf Anfang der neuen Zeile
+                    col = currentFrame - 7;
                 }
                 break;
 
             case PlayerAnim::Attack1: row = 6; break;
             case PlayerAnim::Attack2: row = 7; break;
-            // case PlayerAnim::Attack3: row = 11; break;
 
             case PlayerAnim::Attack3:
-                // --- SPEZIAL LOGIK FÜR ATTACK3 ÜBER 2 REIHEN ---
-                    // Annahme: Eine Reihe hat 7 Bilder (Index 0 bis 6)
-                        if (currentFrame < 7) {
-                            // ab bild 5 Bilder sind in Reihe 7
-                            row = 7;
-                            col = currentFrame;
-                        } else {
-                            // Ab Bild 8 (Index 7) sind wir in Reihe 8
-                            row = 8;
-                            col = currentFrame - 7; // Reset X auf Anfang der neuen Zeile
-                        }
-            break;
-
-
-
-
+                // --- SPEZIAL LOGIK FÜR ATTACK3 ---
+                if (currentFrame < 7) {
+                    row = 7;
+                    col = currentFrame;
+                } else {
+                    row = 8;
+                    col = currentFrame - 7;
+                }
+                break;
         }
 
-        // WICHTIG: Hier nutzen wir jetzt 'col' statt 'currentFrame' für die X-Position
         SDL_FRect srcR = {
             (float)(col * spriteW),
             (float)(row * spriteH),
