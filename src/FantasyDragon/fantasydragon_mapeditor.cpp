@@ -452,7 +452,7 @@ namespace JanSordid::SDL_Example
             SDL_RenderClear(renderer());
         }
 
-        Owned<Surface> s(TTF_RenderText_Blended(_fontTitle.get(), "FANTASY DRAGON", 0, {255, 255, 255, 255}));
+        Owned<Surface> s(TTF_RenderText_Blended(_fontTitle.get(), " ", 0, {255, 255, 255, 255}));
         if(s) {
             Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
             float tx = (winW / 2.0f) - (s->w / 2.0f);
@@ -554,7 +554,7 @@ namespace JanSordid::SDL_Example
         float centerY = winH / 2.0f; float spacing = 80.0f; float startY = centerY - (3 * spacing) / 2.0f;
 
         if (isDown) {
-            std::string volTxt = "Lautstaerke: " + std::to_string((int)((GlobalSettings::musicVolume / 128.0f) * 100)) + "%";
+            std::string volTxt = "Lautstärke: " + std::to_string((int)((GlobalSettings::musicVolume / 128.0f) * 100)) + "%";
             DrawSlider(volTxt.c_str(), startY, mx, my, true);
         }
 
@@ -567,7 +567,7 @@ namespace JanSordid::SDL_Example
                 GlobalSettings::isFullscreen = !GlobalSettings::isFullscreen;
                 SDL_SetWindowFullscreen(window(), GlobalSettings::isFullscreen ? SDL_WINDOW_FULLSCREEN : 0);
             }
-            if (DrawButton("Zurueck", startY + spacing*2, clickX, clickY, true)) _game.PopState();
+            if (DrawButton("Zurück", startY + spacing*2, clickX, clickY, true)) _game.PopState();
         }
 
         if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE) _game.PopState();

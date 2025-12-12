@@ -119,7 +119,7 @@ namespace JanSordid::SDL_Example
         // NEU: Timer runterzählen
         if (hitTimer > 0.0f) hitTimer -= dt;
 
-        const float GRAVITY = 550.0f;
+        const float GRAVITY = 600.0f;
         const float MOVE_SPEED_X = 80.0f;
         const float MOVE_SPEED_Y = 50.0f;
 
@@ -191,13 +191,13 @@ namespace JanSordid::SDL_Example
                 break;
 
             case PlayerAnim::Attack1:
-                startCol = 0; frameCount = 5; frameTime = 0.16f; loop = false;
+                startCol = 0; frameCount = 5; frameTime = 0.12f; loop = false;
                 break;
             case PlayerAnim::Attack2:
-                startCol = 0; frameCount = 4; frameTime = 0.16f; loop = false;
+                startCol = 0; frameCount = 4; frameTime = 0.12f; loop = false;
                 break;
             case PlayerAnim::Attack3:
-                startCol = 5; frameCount = 7; frameTime = 0.16f; loop = false;
+                startCol = 5; frameCount = 7; frameTime = 0.12f; loop = false;
                 break;
         }
 

@@ -3,13 +3,10 @@
 #include "sor/sdl_game.hpp"
 #include "sor/sdl_smartptr.hpp"
 
-// WICHTIG: Hier binden wir den Spieler ein!
 #include "player.hpp"
-
-// Einbindung Gegner
 #include "enemy.hpp"
 
-// WICHTIG: Mixer Header
+// Mixer Header
 #include <SDL3_mixer/SDL_mixer.h>
 
 #include <chrono>
@@ -19,29 +16,25 @@
 #include <sstream>
 #include <memory>
 #include <cstdint>
-#include <filesystem> // WICHTIG für Pfadsuche
+#include <filesystem>
 
-// Fallback Pfade (KORRIGIERT auf Einzahl laut Screenshot)
+// WICHTIG: Wir entfernen hier "asset/", da GetAssetPath das erledigt
 #ifndef BasePathFont
-#define BasePathFont "asset/font/"
+#define BasePathFont "font/"
 #endif
 #ifndef BasePathGraphic
-#define BasePathGraphic "asset/graphic/"
+#define BasePathGraphic "graphic/"
 #endif
 #ifndef BasePathAudio
-#define BasePathAudio "asset/sound/"
+#define BasePathAudio "sound/"
 #endif
 
-// HSNR64 Header Fallback
 #if __has_include("hsnr64/tiles.hpp")
     #include "hsnr64/tiles.hpp"
 #endif
 
 namespace JanSordid::SDL_Example
 {
-    // =========================================================
-    // Typ-Definitionen
-    // =========================================================
     using namespace std::chrono_literals;
     namespace fs = std::filesystem;
 
@@ -64,7 +57,6 @@ namespace JanSordid::SDL_Example
 
     using EditorGameBase = JanSordid::SDL::Game<>;
 
-    // IDs für alle Zustände im Spiel
     enum class GameStateID : std::uint8_t {
         MainMenu = 0,
         Editor,
@@ -72,7 +64,6 @@ namespace JanSordid::SDL_Example
         Game
     };
 
-    // Globale Settings
     struct GlobalSettings {
         static int musicVolume;
         static bool isFullscreen;
@@ -82,9 +73,7 @@ namespace JanSordid::SDL_Example
     // Hilfsfunktion Deklaration
     std::string GetAssetPath(const std::string& subPath);
 
-    // =========================================================
-    // KLASSE: Editor
-    // =========================================================
+    // EditorState
     class EditorState : public JanSordid::SDL::GameState<EditorGameBase>
     {
         using Base = JanSordid::SDL::GameState<EditorGameBase>;
@@ -96,7 +85,6 @@ namespace JanSordid::SDL_Example
 
         Owned<Font>    _font;
         Owned<Texture> _tileSet;
-
         using WorldState = MapType;
 
         const bool _doGenerateEmptyMap = true;
@@ -137,16 +125,13 @@ namespace JanSordid::SDL_Example
         constexpr Color clearColor() const noexcept override { return Color{ 100, 100, 100, 255 }; }
     };
 
-    // =========================================================
-    // KLASSE: Hauptmenü
-    // =========================================================
+    // MainMenuState
     class MainMenuState : public JanSordid::SDL::GameState<EditorGameBase>
     {
         using Base = JanSordid::SDL::GameState<EditorGameBase>;
         Owned<Font> _fontTitle;
         Owned<Font> _fontMenu;
         Owned<Texture> _background;
-
         Mix_Music* _bgMusic = nullptr;
 
     public:
@@ -162,9 +147,7 @@ namespace JanSordid::SDL_Example
         bool DrawButton(const char* text, float y, float mouseX, float mouseY, bool isClicked);
     };
 
-    // =========================================================
-    // KLASSE: Settings
-    // =========================================================
+    // SettingsState
     class SettingsState : public JanSordid::SDL::GameState<EditorGameBase>
     {
         using Base = JanSordid::SDL::GameState<EditorGameBase>;

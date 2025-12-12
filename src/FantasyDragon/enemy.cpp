@@ -153,8 +153,8 @@ namespace JanSordid::SDL_Example
             float shadowW = 20.0f * scale;
             float shadowH = 10.0f * scale;
 
-            // HIER SIND DIE NEUEN VERSCHIEBUNGEN:
-            // -----------------------------------
+
+            // Schatten Scale
             float manualOffsetX = 15.0f * scale; // Nach Rechts schieben
             float manualOffsetY = 5.0f * scale;  // Nach Unten schieben
             // -----------------------------------
