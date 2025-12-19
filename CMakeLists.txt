@@ -148,6 +148,8 @@ add_executable(fantasydragon
         # HELFER (Schriftarten und Kacheln für den Editor)
         src/hsnr64/tilefont.cpp
         src/hsnr64/tiles.cpp
+        src/FantasyDragon/magic/magic_system.cpp
+        src/FantasyDragon/magic/magic_system.hpp
 )
 
 # Wir sagen CMake, wo es Header-Dateien suchen soll.
