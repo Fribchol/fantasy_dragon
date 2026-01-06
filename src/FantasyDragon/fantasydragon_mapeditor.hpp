@@ -5,6 +5,8 @@
 
 #include "player.hpp"
 #include "enemy.hpp"
+#include "magic/magic_system.hpp"
+#include "magic/magic_debug_render.hpp"
 
 // Mixer Header
 #include <SDL3_mixer/SDL_mixer.h>
@@ -32,6 +34,8 @@
 #if __has_include("hsnr64/tiles.hpp")
     #include "hsnr64/tiles.hpp"
 #endif
+
+namespace FD = JanSordid::FantasyDragon;
 
 namespace JanSordid::SDL_Example
 {
@@ -99,6 +103,11 @@ namespace JanSordid::SDL_Example
 
         Player _player;
         Bee _bee;
+        FD::Magic::MagicSystem _magic;
+        int _manaDummy = 100; //Dummy für Mana
+
+        FD::Magic::MagicResult _debugTemplate = FD::Magic::MagicResult::Fireball;
+
 
         Point  _pickedIdx          = Point{ 0, 0 };
         Point  _pickedSize         = Point{ 1, 1 };

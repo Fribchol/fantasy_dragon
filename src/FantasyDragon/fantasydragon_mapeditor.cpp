@@ -6,6 +6,7 @@
 #include <array>
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 
 #if __has_include("hsnr64/offset.hpp")
     #include "hsnr64/offset.hpp"
@@ -90,6 +91,29 @@ namespace JanSordid::SDL_Example
         return surf;
     }
 
+    namespace
+    {
+        const char* FindTemplateFolder()
+        {
+            namespace fs = std::filesystem;
+
+            static const char* candidates[] = {
+                "asset/magic_templates",
+                "../asset/magic_templates",
+                "../../asset/magic_templates",
+                "../../../asset/magic_templates",
+            };
+
+            for (auto* p : candidates)
+            {
+                if (fs::exists(p) && fs::is_directory(p))
+                    return p;
+            }
+            return nullptr;
+        }
+    }
+
+
     // =========================================================
     // EDITOR STATE
     // =========================================================
@@ -124,6 +148,23 @@ namespace JanSordid::SDL_Example
        if (!GlobalSettings::isEditorMode) {
            _player.Init(renderer());
            _bee.Init(renderer(), 300, 200);
+
+           int winW, winH;
+           SDL_GetWindowSize(window(), &winW, &winH);
+
+           // Canvas mittig (256x256)
+           _magic.SetCanvasRect((winW - 256) / 2, (winH - 256) / 2, 256, 256);
+
+           if (const char* folder = FindTemplateFolder())
+           {
+               bool ok = _magic.LoadTemplatesFromFolder(folder);
+               SDL_Log("Magic templates loaded: %d (folder=%s)", ok ? 1 : 0, folder);
+           }
+           else
+           {
+               SDL_Log("Magic templates folder NOT FOUND");
+           }
+
            _mapScale = 2;
        } else {
            _mapScale = 2;
@@ -172,9 +213,48 @@ namespace JanSordid::SDL_Example
            }
        }
 
-       if (!GlobalSettings::isEditorMode) {
-           _player.Input(evt);
-       }
+        if (!GlobalSettings::isEditorMode)
+        {
+            // Start Cast + Debug-Template Auswahl
+            if (evt.type == SDL_EVENT_KEY_DOWN && evt.key.repeat == 0)
+            {
+                if (evt.key.scancode == SDL_SCANCODE_E)
+                    _magic.BeginCast(_manaDummy);
+
+                if (evt.key.scancode == SDL_SCANCODE_ESCAPE && _magic.IsActive())
+                    _magic.Cancel();
+
+                // Debug: Template wechseln
+                if (evt.key.scancode == SDL_SCANCODE_1)
+                    _debugTemplate = FD::Magic::MagicResult::Fireball;
+
+                if (evt.key.scancode == SDL_SCANCODE_2)
+                    _debugTemplate = FD::Magic::MagicResult::Heal;
+            }
+
+            // Wenn Magic aktiv ist: Input an Magic, nicht an Player
+            if (_magic.IsActive())
+            {
+                if (evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_LEFT)
+                    _magic.OnMouseDown(evt.button.x, evt.button.y);
+
+                if (evt.type == SDL_EVENT_MOUSE_MOTION)
+                {
+                    const bool pressed = (evt.motion.state & SDL_BUTTON_LMASK) != 0;
+                    _magic.OnMouseMove(evt.motion.x, evt.motion.y, pressed);
+                }
+
+                if (evt.type == SDL_EVENT_MOUSE_BUTTON_UP && evt.button.button == SDL_BUTTON_LEFT)
+                    _magic.OnMouseUp();
+
+                return true;
+            }
+
+            // Normal: Player Input
+            _player.Input(evt);
+        }
+
+
 
        if (GlobalSettings::isEditorMode && evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_LEFT) {
             FPoint m = { (f32)evt.button.x, (f32)evt.button.y };
@@ -247,25 +327,36 @@ namespace JanSordid::SDL_Example
     }
 
     void EditorState::Update( u64, Duration, f32 deltaT ) {
-        if (!GlobalSettings::isEditorMode) {
-            _player.Update(deltaT, *_currState);
-            _bee.Update(deltaT, _player);
+        if (!GlobalSettings::isEditorMode)
+        {
+            if (_magic.IsActive())
+            {
+                _magic.Update(deltaT);
+            }
+            else {
+                _player.Update(deltaT, *_currState);
+                _bee.Update(deltaT, _player);
 
-            if (_player.isAttacking && _player.currentFrame >= 2 && _player.currentFrame <= 4) {
-                FRect swordBox = _player.GetAttackHitbox();
-                FRect beeBox = _bee.GetHitbox();
-                if (SDL_HasRectIntersectionFloat(&swordBox, &beeBox)) {
-                    if (_bee.z < 40) {
-                        _bee.TakeDamage(10);
+                if (_player.isAttacking && _player.currentFrame >= 2 && _player.currentFrame <= 4) {
+                    FRect swordBox = _player.GetAttackHitbox();
+                    FRect beeBox = _bee.GetHitbox();
+                    if (SDL_HasRectIntersectionFloat(&swordBox, &beeBox)) {
+                        if (_bee.z < 40) {
+                            _bee.TakeDamage(10);
+                        }
                     }
                 }
+                int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
+                float targetCamX = -((_player.position.x * _mapScale) - (winW / 2.0f));
+                float targetCamY = -((_player.position.y * _mapScale) - (winH / 2.0f));
+                _camera.x += (targetCamX - _camera.x) * 5.0f * deltaT;
+                _camera.y += (targetCamY - _camera.y) * 5.0f * deltaT;
             }
-
-            int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-            float targetCamX = -((_player.position.x * _mapScale) - (winW / 2.0f));
-            float targetCamY = -((_player.position.y * _mapScale) - (winH / 2.0f));
-            _camera.x += (targetCamX - _camera.x) * 5.0f * deltaT;
-            _camera.y += (targetCamY - _camera.y) * 5.0f * deltaT;
+            auto res = _magic.ConsumeResult();
+            if (res != JanSordid::FantasyDragon::Magic::MagicResult::None)
+            {
+                SDL_Log("MagicResult: %d", (int)res);
+            }
         }
     }
 
@@ -297,6 +388,17 @@ namespace JanSordid::SDL_Example
                _player.Render(renderer(), _camera, _mapScale);
            }
        }
+
+        if (!GlobalSettings::isEditorMode)
+        {
+            int winW, winH;
+            SDL_GetWindowSize(window(), &winW, &winH);
+
+            FD::Magic::MagicDebugRender::RenderOverlay(
+                renderer(), _magic, winW, winH, _debugTemplate
+            );
+
+        }
 
        if(GlobalSettings::isEditorMode) {
            SDL_SetRenderDrawColor( renderer(), 255, 0, 0, 255 );

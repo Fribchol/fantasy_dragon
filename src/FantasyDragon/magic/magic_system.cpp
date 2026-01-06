@@ -128,6 +128,17 @@ namespace JanSordid::FantasyDragon::Magic
         return ok && !templates.empty();
     }
 
+    const MagicSystem::Grid64* MagicSystem::GetTemplateMask(MagicResult spell) const
+    {
+        for (const auto& t : templates)
+        {
+            if (t.spell == spell)
+                return &t.mask;
+        }
+        return nullptr;
+    }
+
+
     MagicResult MagicSystem::EvaluateDrawing() const
     {
         if (templates.empty()) return MagicResult::Fail;

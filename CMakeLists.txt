@@ -150,6 +150,8 @@ add_executable(fantasydragon
         src/hsnr64/tiles.cpp
         src/FantasyDragon/magic/magic_system.cpp
         src/FantasyDragon/magic/magic_system.hpp
+        src/FantasyDragon/magic/magic_debug_render.cpp
+        src/FantasyDragon/magic/magic_debug_render.hpp
 )
 
 # Wir sagen CMake, wo es Header-Dateien suchen soll.

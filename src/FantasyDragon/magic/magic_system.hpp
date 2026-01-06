@@ -66,6 +66,9 @@ namespace JanSordid::FantasyDragon::Magic
         void SetCanvasRect(int x, int y, int w, int h);
         const CanvasRect& GetCanvasRect() const;
 
+        // Debug: gibt die Maske eines geladenen Templates zurück (oder nullptr)
+        const Grid64* GetTemplateMask(MagicResult spell) const;
+
         // --- Raster Zugriff ---
         void ClearDrawing();
         const Grid64& GetDrawing() const;
