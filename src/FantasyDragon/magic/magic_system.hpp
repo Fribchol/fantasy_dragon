@@ -33,8 +33,8 @@ namespace JanSordid::FantasyDragon::Magic
         // 64x64 Raster (0/1)
         struct Grid64
         {
-            static constexpr int W = 64;
-            static constexpr int H = 64;
+            static constexpr int W = 32;
+            static constexpr int H = 32;
 
             std::array<u8, W * H> px{};
 

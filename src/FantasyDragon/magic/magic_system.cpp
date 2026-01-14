@@ -153,7 +153,7 @@ namespace JanSordid::FantasyDragon::Magic
 
         // Scoring-Parameter
         const float extraPenalty = 1.2f;  // Strafe für “zu viel gemalt”
-        const float minScore     = 0.72f; // Schwelle: je höher, desto strenger
+        const float minScore     = 0.32f; // Schwelle: je höher, desto strenger
 
         MagicResult bestSpell = MagicResult::Fail;
         float bestScore = 0.0f;
