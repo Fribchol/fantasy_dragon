@@ -77,7 +77,9 @@ namespace JanSordid::SDL_Example
     // Hilfsfunktion Deklaration
     std::string GetAssetPath(const std::string& subPath);
 
+    // =========================
     // EditorState
+    // =========================
     class EditorState : public JanSordid::SDL::GameState<EditorGameBase>
     {
         using Base = JanSordid::SDL::GameState<EditorGameBase>;
@@ -87,14 +89,37 @@ namespace JanSordid::SDL_Example
             Color{ 0,0,255,255 }, Color{ 255,0,255,255 }, Color{ 0,255,255,255 }, Color{ 255,255,255,255 },
         };
 
+    public:
+        // --- öffentlich, damit in .cpp nutzbar ---
+        struct FireballProjectile
+        {
+            FPoint pos{};
+            FPoint vel{};          // Pixel/Sekunde in World-Koordinaten
+            float  z = 0.0f;
+            float  radius = 10.0f; // World-Pixel vor Scale
+            float  lifetime = 1.2f;
+            bool   alive = true;
+        };
+
+        using Base::Base;
+        void Init() override;
+        void Destroy() override;
+        bool Input( const Event & event ) override;
+        void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT ) override;
+        void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
+        constexpr Color clearColor() const noexcept override { return Color{ 100, 100, 100, 255 }; }
+
+    private:
         Owned<Font>    _font;
         Owned<Texture> _tileSet;
+
         using WorldState = MapType;
 
         const bool _doGenerateEmptyMap = true;
         WorldState _worldState1;
         WorldState _worldState2;
-        WorldState *_currState = &_worldState1, *_nextState = &_worldState2;
+        WorldState* _currState = &_worldState1;
+        WorldState* _nextState = &_worldState2;
 
         Point  _tileSetSize;
         Point  _tileSize;
@@ -104,10 +129,10 @@ namespace JanSordid::SDL_Example
         Player _player;
         Bee _bee;
         FD::Magic::MagicSystem _magic;
-        int _manaDummy = 100; //Dummy für Mana
+        int _manaDummy = 100;
 
+        std::vector<FireballProjectile> _fireballs;
         FD::Magic::MagicResult _debugTemplate = FD::Magic::MagicResult::Fireball;
-
 
         Point  _pickedIdx          = Point{ 0, 0 };
         Point  _pickedSize         = Point{ 1, 1 };
@@ -123,21 +148,15 @@ namespace JanSordid::SDL_Example
 
         constexpr static Duration UpdateDeltaTime = 16ms;
         Duration _nextUpdateTime = {};
-
-    public:
-        using Base::Base;
-        void Init() override;
-        void Destroy() override;
-        bool Input( const Event & event ) override;
-        void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT ) override;
-        void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
-        constexpr Color clearColor() const noexcept override { return Color{ 100, 100, 100, 255 }; }
     };
 
+    // =========================
     // MainMenuState
+    // =========================
     class MainMenuState : public JanSordid::SDL::GameState<EditorGameBase>
     {
         using Base = JanSordid::SDL::GameState<EditorGameBase>;
+
         Owned<Font> _fontTitle;
         Owned<Font> _fontMenu;
         Owned<Texture> _background;
@@ -156,10 +175,13 @@ namespace JanSordid::SDL_Example
         bool DrawButton(const char* text, float y, float mouseX, float mouseY, bool isClicked);
     };
 
+    // =========================
     // SettingsState
+    // =========================
     class SettingsState : public JanSordid::SDL::GameState<EditorGameBase>
     {
         using Base = JanSordid::SDL::GameState<EditorGameBase>;
+
         Owned<Font> _font;
         Owned<Texture> _background;
 

@@ -24,6 +24,9 @@ using JanSordid::SDL::EntireFRect;
 
 namespace JanSordid::SDL_Example
 {
+    // Alias für Projektil-Typ (robust in Helpern nutzbar)
+    using Fireball = EditorState::FireballProjectile;
+
     // GLOBALE SETTINGS INIT
     int GlobalSettings::musicVolume = 64;
     bool GlobalSettings::isFullscreen = false;
@@ -110,6 +113,61 @@ namespace JanSordid::SDL_Example
                     return p;
             }
             return nullptr;
+        }
+
+        static JanSordid::SDL::FRect CircleToRect(const JanSordid::SDL::FPoint& center, float radius)
+        {
+            return JanSordid::SDL::FRect{ center.x - radius, center.y - radius, radius * 2.0f, radius * 2.0f };
+        }
+
+        static void SpawnFireball(std::vector<Fireball>& list, const Player& player)
+        {
+            Fireball p;
+
+            const float dir = player.facingRight ? 1.0f : -1.0f;
+
+            p.pos = player.position;
+            p.pos.x += dir * 20.0f;
+
+            p.vel = { dir * 420.0f, 0.0f };
+
+            p.radius = 10.0f;
+            p.lifetime = 1.2f;
+            p.alive = true;
+
+            list.push_back(p);
+        }
+
+        void ApplyMagicResult(FD::Magic::MagicResult res,
+                              Player& player,
+                              Bee& bee,
+                              std::vector<Fireball>& fireballs)
+        {
+            switch (res)
+            {
+                case FD::Magic::MagicResult::Fireball:
+                {
+                    SDL_Log("Cast: Fireball");
+                    SpawnFireball(fireballs, player);
+                    break;
+                }
+
+                case FD::Magic::MagicResult::Heal:
+                {
+                    SDL_Log("Cast: Heal");
+                    player.hp = std::min(player.hp + 25, 100);
+                    break;
+                }
+
+                case FD::Magic::MagicResult::Fail:
+                {
+                    SDL_Log("Cast failed");
+                    break;
+                }
+
+                default:
+                    break;
+            }
         }
     }
 
@@ -254,8 +312,6 @@ namespace JanSordid::SDL_Example
             _player.Input(evt);
         }
 
-
-
        if (GlobalSettings::isEditorMode && evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_LEFT) {
             FPoint m = { (f32)evt.button.x, (f32)evt.button.y };
             bool clickedInsidePalette = false;
@@ -337,6 +393,40 @@ namespace JanSordid::SDL_Example
                 _player.Update(deltaT, *_currState);
                 _bee.Update(deltaT, _player);
 
+                // Fireballs updaten
+                for (auto& f : _fireballs)
+                {
+                    if (!f.alive) continue;
+
+                    f.lifetime -= deltaT;
+                    if (f.lifetime <= 0.0f)
+                    {
+                        f.alive = false;
+                        continue;
+                    }
+
+                    // Bewegung (World-Koordinaten)
+                    f.pos.x += f.vel.x * deltaT;
+                    f.pos.y += f.vel.y * deltaT;
+
+                    // Kollision mit Bee (einfach: Rect vs Rect)
+                    const FRect fbBox  = CircleToRect(f.pos, f.radius);
+                    const FRect beeBox = _bee.GetHitbox();
+
+                    if (SDL_HasRectIntersectionFloat(&fbBox, &beeBox))
+                    {
+                        _bee.TakeDamage(20);
+                        f.alive = false;
+                    }
+                }
+
+                // Tote entfernen (optional, aber sauber)
+                _fireballs.erase(
+                    std::remove_if(_fireballs.begin(), _fireballs.end(),
+                                   [](const auto& f) { return !f.alive; }),
+                    _fireballs.end()
+                );
+
                 if (_player.isAttacking && _player.currentFrame >= 2 && _player.currentFrame <= 4) {
                     FRect swordBox = _player.GetAttackHitbox();
                     FRect beeBox = _bee.GetHitbox();
@@ -353,9 +443,9 @@ namespace JanSordid::SDL_Example
                 _camera.y += (targetCamY - _camera.y) * 5.0f * deltaT;
             }
             auto res = _magic.ConsumeResult();
-            if (res != JanSordid::FantasyDragon::Magic::MagicResult::None)
+            if (res != FD::Magic::MagicResult::None)
             {
-                SDL_Log("MagicResult: %d", (int)res);
+                ApplyMagicResult(res, _player, _bee, _fireballs);
             }
         }
     }
@@ -389,6 +479,31 @@ namespace JanSordid::SDL_Example
            }
        }
 
+       // --- Fireballs rendern (sichtbar machen) ---
+       if (!GlobalSettings::isEditorMode)
+       {
+           SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND);
+           SDL_SetRenderDrawColor(renderer(), 255, 60, 40, 220);
+
+           for (const auto& f : _fireballs)
+           {
+               if (!f.alive) continue;
+
+               const float r = f.radius * (float)_mapScale;
+
+               SDL_FRect dst = {
+                   (f.pos.x * (float)_mapScale) + _camera.x - r,
+                   (f.pos.y * (float)_mapScale) + _camera.y - r,
+                   r * 2.0f,
+                   r * 2.0f
+               };
+
+               SDL_RenderFillRect(renderer(), &dst);
+           }
+
+           SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_NONE);
+       }
+
         if (!GlobalSettings::isEditorMode)
         {
             int winW, winH;
@@ -397,7 +512,6 @@ namespace JanSordid::SDL_Example
             FD::Magic::MagicDebugRender::RenderOverlay(
                 renderer(), _magic, winW, winH, _debugTemplate
             );
-
         }
 
        if(GlobalSettings::isEditorMode) {
@@ -418,7 +532,7 @@ namespace JanSordid::SDL_Example
            FPoint m = { mx, my };
            bool overPalette = _showPalette && (m.x < toF(_tileSetSize*_paletteScale).x && m.y < toF(_tileSetSize*_paletteScale).y);
 
-           if (!overPalette && !_isSelectingPalette) {
+           if (!overPalette && !_isSelectingPalette) { // NOTE: falls du hier _isSelectingPalette meinst, bitte wieder korrigieren
                Point p = toI(m - _camera) / (_tileSize * _mapScale);
                if(p.y >= 0 && (size_t)p.y < curr.size() && p.x >= 0 && (size_t)p.x < curr[0].size()) {
                    SDL_SetTextureAlphaMod(_tileSet.get(), 150);
