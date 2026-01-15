@@ -187,7 +187,7 @@ namespace JanSordid::SDL_Example
         }
     }
 
-    void Player::Render(SDL_Renderer* renderer, FPoint camera, int scale) {
+    void Player::Render(SDL_Renderer* renderer, FPoint camera, int scale, bool healTint) {
         if (!spriteSheet) return;
         if (hitTimer > 0.0f && (int)(hitTimer * 15) % 2 == 0) return;
 
@@ -222,6 +222,8 @@ namespace JanSordid::SDL_Example
         };
 
         SDL_FlipMode flip = facingRight ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL;
+        if (healTint) SDL_SetTextureColorMod(spriteSheet.get(), 255, 240, 90);
         SDL_RenderTextureRotated(renderer, spriteSheet.get(), &srcR, &dstR, 0.0, nullptr, flip);
+        if (healTint) SDL_SetTextureColorMod(spriteSheet.get(), 255, 255, 255);
     }
 }

@@ -148,10 +148,19 @@ namespace JanSordid::SDL_Example
             list.push_back(e);
         }
 
+        static void SpawnHeal(std::vector<EditorState::HealAnim>& list, const FPoint& pos) {
+            EditorState::HealAnim h;
+            h.pos = pos;
+            h.animTime = 0.0f;
+            h.alive = true;
+            list.push_back(h);
+        }
+
         void ApplyMagicResult(FD::Magic::MagicResult res,
                               Player& player,
                               std::vector<Bee>& bees,
-                              std::vector<Fireball>& fireballs)
+                              std::vector<Fireball>& fireballs,
+                              std::vector<EditorState::HealAnim>& heals)
         {
             switch (res) {
                 case FD::Magic::MagicResult::Fireball:
@@ -161,6 +170,8 @@ namespace JanSordid::SDL_Example
                 case FD::Magic::MagicResult::Heal:
                     SDL_Log(">>> CAST: HEAL <<<");
                     player.hp = std::min(player.hp + 25, 100);
+                    SpawnHeal(heals, FPoint{player.position.x + (player.size.x * 0.5f),
+                                            player.position.y - player.size.y});
                     break;
                 case FD::Magic::MagicResult::Fail:
                     SDL_Log(">>> CAST: FAIL (Nicht erkannt) <<<");
@@ -213,6 +224,16 @@ namespace JanSordid::SDL_Example
                SDL_Log("Explosion Textur geladen!");
            } else {
                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Explosion Textur fehlt: %s", exPath.c_str());
+           }
+       }
+       if (!_texHeal) {
+           std::string healPath = GetAssetPath("magic/Holy/Buff/Holy_Cross_Front_48x64.png");
+           auto* surf = IMG_Load(healPath.c_str());
+           if (surf) {
+               _texHeal.reset(SDL_CreateTextureFromSurface(renderer(), surf));
+               SDL_Log("Heal Textur geladen!");
+           } else {
+               SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Heal Textur fehlt: %s", healPath.c_str());
            }
        }
 
@@ -446,6 +467,17 @@ namespace JanSordid::SDL_Example
                 }
                 _explosions.erase(std::remove_if(_explosions.begin(), _explosions.end(), [](const auto& e) { return !e.alive; }), _explosions.end());
 
+                for (auto& h : _heals) {
+                    if (!h.alive) continue;
+                    h.animTime += deltaT;
+                    constexpr int kHealFrames = 9;
+                    constexpr float kHealFrameTime = 0.05f;
+                    if (h.animTime >= kHealFrames * kHealFrameTime) {
+                        h.alive = false;
+                    }
+                }
+                _heals.erase(std::remove_if(_heals.begin(), _heals.end(), [](const auto& h) { return !h.alive; }), _heals.end());
+
                 if (_player.isAttacking && _player.currentFrame >= 2 && _player.currentFrame <= 4) {
                     FRect swordBox = _player.GetAttackHitbox();
 
@@ -473,13 +505,14 @@ namespace JanSordid::SDL_Example
             auto res = _magic.ConsumeResult();
             if (res != FD::Magic::MagicResult::None) {
                 SDL_Log("Geste erkannt! ID: %d", (int)res);
-                ApplyMagicResult(res, _player, _bees, _fireballs);
+                ApplyMagicResult(res, _player, _bees, _fireballs, _heals);
             }
         }
     }
 
    void EditorState::Render( u64 frames, Duration, f32 deltaTNeeded ) {
        const auto& refLayer = (*_currState)[0];
+       const bool healActive = std::any_of(_heals.begin(), _heals.end(), [](const auto& h) { return h.alive; });
        FPoint mapTS = toF( _tileSize * _mapScale );
        SDL_SetRenderDrawColor( renderer(), 30, 30, 30, 255 );
        FRect mapBG = toFRect( _camera, FPoint{(f32)refLayer[0].size(), (f32)refLayer.size()} * mapTS );
@@ -522,7 +555,7 @@ namespace JanSordid::SDL_Example
               int playerTileRow = (int)(playerFootY / 16.0f);
 
               if (playerTileRow == (int)y) {
-                  _player.Render(renderer(), _camera, _mapScale);
+                  _player.Render(renderer(), _camera, _mapScale, healActive);
               }
 
               for (auto& bee : _bees) {
@@ -597,6 +630,28 @@ namespace JanSordid::SDL_Example
                                              sizeW, sizeH };
                if (_texExplosion) {
                    SDL_RenderTexture(renderer(), _texExplosion.get(), &src, &dst);
+               }
+           }
+           for (const auto& h : _heals) {
+               if (!h.alive) continue;
+               constexpr int kHealCols = 3;
+               constexpr int kHealRows = 3;
+               constexpr int kHealFrames = 9;
+               constexpr int kHealFrameW = 48;
+               constexpr int kHealFrameH = 64;
+               constexpr float kHealFrameTime = 0.05f;
+               const int frame = std::min((int)(h.animTime / kHealFrameTime), kHealFrames - 1);
+               const int col = frame % kHealCols;
+               const int row = frame / kHealCols;
+               JanSordid::SDL::FRect src = { (float)(col * kHealFrameW), (float)(row * kHealFrameH),
+                                             (float)kHealFrameW, (float)kHealFrameH };
+               const float sizeW = (float)kHealFrameW * (float)_mapScale;
+               const float sizeH = (float)kHealFrameH * (float)_mapScale;
+               JanSordid::SDL::FRect dst = { (h.pos.x * (float)_mapScale) + _camera.x - (sizeW * 0.5f),
+                                             (h.pos.y * (float)_mapScale) + _camera.y - (sizeH * 0.5f),
+                                             sizeW, sizeH };
+               if (_texHeal) {
+                   SDL_RenderTexture(renderer(), _texHeal.get(), &src, &dst);
                }
            }
            int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);

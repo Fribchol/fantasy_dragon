@@ -64,7 +64,7 @@ namespace JanSordid::SDL_Example
         // Geändert: Nimmt jetzt WorldState (alle Layer)
         void Update(float dt, const WorldState& world);
         void Input(const Event& evt);
-        void Render(SDL_Renderer* renderer, FPoint camera, int scale);
+        void Render(SDL_Renderer* renderer, FPoint camera, int scale, bool healTint = false);
 
         void TakeDamage(int amount);
         FRect GetAttackHitbox() const;
