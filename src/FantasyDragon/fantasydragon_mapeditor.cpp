@@ -8,6 +8,11 @@
 #include <cmath>
 #include <filesystem>
 
+// Für PI (Winkelberechnung)
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 #if __has_include("hsnr64/offset.hpp")
     #include "hsnr64/offset.hpp"
 #endif
@@ -24,17 +29,18 @@ using JanSordid::SDL::EntireFRect;
 
 namespace JanSordid::SDL_Example
 {
-    // Alias für Projektil-Typ (robust in Helpern nutzbar)
     using Fireball = EditorState::FireballProjectile;
 
-    // GLOBALE SETTINGS INIT
     int GlobalSettings::musicVolume = 64;
     bool GlobalSettings::isFullscreen = false;
     bool GlobalSettings::isEditorMode = true;
 
     static std::string g_PendingGameMap = "";
 
-    // --- Hilfsfunktionen für Datei I/O ---
+    std::string GetAssetPath(const std::string& subPath) {
+        return "asset/" + subPath;
+    }
+
     void SaveMapToFile(const std::string& filename, const MapType& map) {
         std::ofstream file(filename);
         if (file.is_open()) {
@@ -50,7 +56,11 @@ namespace JanSordid::SDL_Example
     bool LoadMapFromFile(const std::string& filename, MapType& map) {
         std::ifstream file(filename);
         if (file.is_open()) {
-            for (auto& row : map) for (auto& cell : row) file >> cell;
+            for (auto& row : map) {
+                 for (size_t i = 0; i < row.size(); ++i) {
+                     if (!(file >> row[i])) { row[i] = 0; file.clear(); }
+                 }
+            }
             file.close();
             SDL_Log("Map geladen: %s", filename.c_str());
             return true;
@@ -96,106 +106,89 @@ namespace JanSordid::SDL_Example
 
     namespace
     {
-        const char* FindTemplateFolder()
-        {
-            namespace fs = std::filesystem;
-
-            static const char* candidates[] = {
-                "asset/magic_templates",
-                "../asset/magic_templates",
-                "../../asset/magic_templates",
-                "../../../asset/magic_templates",
-            };
-
-            for (auto* p : candidates)
-            {
-                if (fs::exists(p) && fs::is_directory(p))
-                    return p;
-            }
-            return nullptr;
+        std::string FindTemplateFolderString() {
+            return GetAssetPath("magic_templates");
         }
 
-        static JanSordid::SDL::FRect CircleToRect(const JanSordid::SDL::FPoint& center, float radius)
-        {
+        static JanSordid::SDL::FRect CircleToRect(const JanSordid::SDL::FPoint& center, float radius) {
             return JanSordid::SDL::FRect{ center.x - radius, center.y - radius, radius * 2.0f, radius * 2.0f };
         }
 
-        static void SpawnFireball(std::vector<Fireball>& list, const Player& player)
-        {
+        static void SpawnFireball(std::vector<Fireball>& list, const Player& player) {
             Fireball p;
-
             const float dir = player.facingRight ? 1.0f : -1.0f;
-
             p.pos = player.position;
             p.pos.x += dir * 20.0f;
-
             p.vel = { dir * 420.0f, 0.0f };
-
             p.radius = 10.0f;
             p.lifetime = 1.2f;
             p.alive = true;
-
             list.push_back(p);
         }
 
         void ApplyMagicResult(FD::Magic::MagicResult res,
                               Player& player,
-                              Bee& bee,
+                              std::vector<Bee>& bees,
                               std::vector<Fireball>& fireballs)
         {
-            switch (res)
-            {
+            switch (res) {
                 case FD::Magic::MagicResult::Fireball:
-                {
-                    SDL_Log("Cast: Fireball");
+                    SDL_Log(">>> CAST: FIREBALL <<<");
                     SpawnFireball(fireballs, player);
                     break;
-                }
-
                 case FD::Magic::MagicResult::Heal:
-                {
-                    SDL_Log("Cast: Heal");
+                    SDL_Log(">>> CAST: HEAL <<<");
                     player.hp = std::min(player.hp + 25, 100);
                     break;
-                }
-
                 case FD::Magic::MagicResult::Fail:
-                {
-                    SDL_Log("Cast failed");
+                    SDL_Log(">>> CAST: FAIL (Nicht erkannt) <<<");
                     break;
-                }
-
-                default:
-                    break;
+                default: break;
             }
         }
     }
-
 
     // =========================================================
     // EDITOR STATE
     // =========================================================
     void EditorState::Init() {
-       SDL_Log("--- INIT STATE (EditorMode: %d) ---", GlobalSettings::isEditorMode);
-       if( !_font ) _font.reset( TTF_OpenFont( BasePathFont "RobotoSlab-Bold.ttf", (int)(9 * _game.scalingFactor()) ) );
+       int echteBreite = (int)(*_currState)[0].size();
+       SDL_Log("!!! DEBUG: DIE MAP IST %d BLÖCKE BREIT !!!", echteBreite);
+       SDL_Log("--- INIT STATE ---");
+
+       std::string fontP = GetAssetPath(BasePathFont "RobotoSlab-Bold.ttf");
+       if( !_font ) _font.reset( TTF_OpenFont( fontP.c_str(), (int)(9 * _game.scalingFactor()) ) );
 
        if( !_tileSet ) {
-          const char* filename = BasePathGraphic "tiles_fantasydragon.png";
-          Owned<Surface> surf(IMG_Load(filename));
+          std::string tileP = GetAssetPath(BasePathGraphic "tiles_fantasydragon.png");
+          Owned<Surface> surf(IMG_Load(tileP.c_str()));
           if(!surf) {
-              SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Bild fehlt: %s", filename);
+              SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Bild fehlt: %s", tileP.c_str());
               surf.reset( GenerateFallbackTileset() );
+          } else {
+              SDL_Log("Bild geladen: %s", tileP.c_str());
           }
           _tileSet.reset( SDL_CreateTextureFromSurface( renderer(), surf.get() ) );
           _tileSetSize = { surf->w, surf->h };
-
           const int PIXEL_SIZE = 16;
           _tileSize = { PIXEL_SIZE, PIXEL_SIZE };
           _tileCount = _tileSetSize / _tileSize;
           if (_tileCount.x == 0) _tileCount.x = 1; if (_tileCount.y == 0) _tileCount.y = 1;
-
           SDL_SetTextureScaleMode( _tileSet.get(), SDL_ScaleMode::SDL_SCALEMODE_NEAREST );
        }
+
+       // --- NEU: FEUERBALL LADEN ---
+       if (!_texFireball) {
+           std::string fbPath = GetAssetPath(BasePathGraphic "fire.png");
+           auto* surf = IMG_Load(fbPath.c_str());
+           if (surf) {
+               _texFireball.reset(SDL_CreateTextureFromSurface(renderer(), surf));
+               SDL_Log("Feuerball Textur geladen!");
+           } else {
+               SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Feuerball Textur fehlt: %s", fbPath.c_str());
+           }
+       }
+       // ----------------------------
 
        if( _doGenerateEmptyMap ) {
           const int FillTile = 0; const int BorderTile = 0;
@@ -205,62 +198,50 @@ namespace JanSordid::SDL_Example
 
        if (!GlobalSettings::isEditorMode) {
            _player.Init(renderer());
-           _bee.Init(renderer(), 300, 200);
 
-           int winW, winH;
-           SDL_GetWindowSize(window(), &winW, &winH);
+           _bees.clear();
+           // Biene 1
+           { Bee b; b.Init(renderer(), 1200.0f, 200.0f); _bees.push_back(std::move(b)); }
+           // Biene 2
+           { Bee b; b.Init(renderer(), 2300.0f, 150.0f); _bees.push_back(std::move(b)); }
 
-           // Canvas mittig (256x256)
+           int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
            _magic.SetCanvasRect((winW - 256) / 2, (winH - 256) / 2, 256, 256);
 
-           if (const char* folder = FindTemplateFolder())
-           {
-               bool ok = _magic.LoadTemplatesFromFolder(folder);
-               SDL_Log("Magic templates loaded: %d (folder=%s)", ok ? 1 : 0, folder);
+           std::string templateFolder = FindTemplateFolderString();
+           namespace fs = std::filesystem;
+           if (fs::exists(templateFolder)) {
+               bool ok = _magic.LoadTemplatesFromFolder(templateFolder.c_str());
+               if(ok) SDL_Log("Templates geladen.");
+           } else {
+               SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Templates Ordner fehlt: %s", templateFolder.c_str());
            }
-           else
-           {
-               SDL_Log("Magic templates folder NOT FOUND");
-           }
-
            _mapScale = 2;
        } else {
            _mapScale = 2;
        }
 
        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-       float mapPixelW = (float)( (*_currState)[0].size() * 16 * _mapScale );
        float mapPixelH = (float)( (*_currState).size() * 16 * _mapScale );
-       _camera.x = -((winW / 2.0f) - (mapPixelW / 2.0f));
-       _camera.y = -((winH / 2.0f) - (mapPixelH / 2.0f));
-
+       _camera.x = 50.0f;
+       _camera.y = (winH / 2.0f) - (mapPixelH / 2.0f);
        _paletteScale = 1;
 
        if (GlobalSettings::isEditorMode) {
-           _showPalette = true;
-           _showGrid = true;
+           _showPalette = true; _showGrid = true;
        } else {
-           _showPalette = false;
-           _showGrid = false;
-           if (!g_PendingGameMap.empty()) {
-               LoadMapFromFile(g_PendingGameMap, *_currState);
-               g_PendingGameMap = "";
-           }
+           _showPalette = false; _showGrid = false;
+           if (!g_PendingGameMap.empty()) { LoadMapFromFile(g_PendingGameMap, *_currState); g_PendingGameMap = ""; }
        }
-
-       _pickedSize = { 1, 1 };
-       _pickedIdx = { 0, 0 };
-       _isSelectingPalette = false;
+       _pickedSize = { 1, 1 }; _pickedIdx = { 0, 0 }; _isSelectingPalette = false;
     }
 
     void EditorState::Destroy() {}
 
     bool EditorState::Input( const Event & evt ) {
-       const char* defaultPath = "C:\\Users\\frieb\\CLionProjects\\fantasy_dragon\\asset\\map\\";
-
+       const char* defaultPath = "asset\\map\\";
        if (evt.type == SDL_EVENT_KEY_DOWN) {
            if (evt.key.scancode == SDL_SCANCODE_ESCAPE) { _game.ReplaceState( (u8)GameStateID::MainMenu ); return true; }
-
            if (GlobalSettings::isEditorMode) {
                if (evt.key.scancode == SDL_SCANCODE_TAB && evt.key.repeat == 0) _showPalette = !_showPalette;
                if (evt.key.scancode == SDL_SCANCODE_F8) SDL_ShowSaveFileDialog(OnMapSave, _currState, window(), nullptr, 0, defaultPath);
@@ -271,65 +252,33 @@ namespace JanSordid::SDL_Example
            }
        }
 
-        if (!GlobalSettings::isEditorMode)
-        {
-            // Start Cast + Debug-Template Auswahl
-            if (evt.type == SDL_EVENT_KEY_DOWN && evt.key.repeat == 0)
-            {
-                if (evt.key.scancode == SDL_SCANCODE_E)
-                    _magic.BeginCast(_manaDummy);
-
-                if (evt.key.scancode == SDL_SCANCODE_ESCAPE && _magic.IsActive())
-                    _magic.Cancel();
-
-                // Debug: Template wechseln
-                if (evt.key.scancode == SDL_SCANCODE_1)
-                    _debugTemplate = FD::Magic::MagicResult::Fireball;
-
-                if (evt.key.scancode == SDL_SCANCODE_2)
-                    _debugTemplate = FD::Magic::MagicResult::Heal;
+        if (!GlobalSettings::isEditorMode) {
+            if (evt.type == SDL_EVENT_KEY_DOWN && evt.key.repeat == 0) {
+                if (evt.key.scancode == SDL_SCANCODE_E) _magic.BeginCast(_manaDummy);
+                if (evt.key.scancode == SDL_SCANCODE_ESCAPE && _magic.IsActive()) _magic.Cancel();
+                if (evt.key.scancode == SDL_SCANCODE_1) _debugTemplate = FD::Magic::MagicResult::Fireball;
+                if (evt.key.scancode == SDL_SCANCODE_2) _debugTemplate = FD::Magic::MagicResult::Heal;
             }
-
-            // Wenn Magic aktiv ist: Input an Magic, nicht an Player
-            if (_magic.IsActive())
-            {
-                if (evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_LEFT)
-                    _magic.OnMouseDown(evt.button.x, evt.button.y);
-
-                if (evt.type == SDL_EVENT_MOUSE_MOTION)
-                {
-                    const bool pressed = (evt.motion.state & SDL_BUTTON_LMASK) != 0;
-                    _magic.OnMouseMove(evt.motion.x, evt.motion.y, pressed);
-                }
-
-                if (evt.type == SDL_EVENT_MOUSE_BUTTON_UP && evt.button.button == SDL_BUTTON_LEFT)
-                    _magic.OnMouseUp();
-
+            if (_magic.IsActive()) {
+                if (evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_LEFT) _magic.OnMouseDown(evt.button.x, evt.button.y);
+                if (evt.type == SDL_EVENT_MOUSE_MOTION) { const bool pressed = (evt.motion.state & SDL_BUTTON_LMASK) != 0; _magic.OnMouseMove(evt.motion.x, evt.motion.y, pressed); }
+                if (evt.type == SDL_EVENT_MOUSE_BUTTON_UP && evt.button.button == SDL_BUTTON_LEFT) _magic.OnMouseUp();
                 return true;
             }
-
-            // Normal: Player Input
             _player.Input(evt);
         }
 
        if (GlobalSettings::isEditorMode && evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_LEFT) {
             FPoint m = { (f32)evt.button.x, (f32)evt.button.y };
             bool clickedInsidePalette = false;
-
             if (_showPalette) {
                 const FPoint paletteSize = toF(_tileSetSize * _paletteScale);
                 if (m.x < paletteSize.x && m.y < paletteSize.y) {
                     clickedInsidePalette = true;
                     Point p = toI(m) / (_tileSize * _paletteScale);
-                    if(p.x < _tileCount.x && p.y < _tileCount.y) {
-                        _isSelectingPalette = true;
-                        _selectionStart = p;
-                        _pickedIdx = p;
-                        _pickedSize = { 1, 1 };
-                    }
+                    if(p.x < _tileCount.x && p.y < _tileCount.y) { _isSelectingPalette = true; _selectionStart = p; _pickedIdx = p; _pickedSize = { 1, 1 }; }
                 }
             }
-
             if (!clickedInsidePalette) {
                 _isPainting = true;
                 Point p = toI(m - _camera) / (_tileSize * _mapScale);
@@ -339,19 +288,15 @@ namespace JanSordid::SDL_Example
                              int targetX = p.x + px; int targetY = p.y + py;
                              if(targetY >= 0 && (size_t)targetY < _currState->size() && targetX >= 0 && (size_t)targetX < (*_currState)[0].size()) {
                                  int tileIdxX = _pickedIdx.x + px; int tileIdxY = _pickedIdx.y + py;
-                                 if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) {
-                                     (*_currState)[targetY][targetX] = tileIdxX + tileIdxY * _tileCount.x;
-                                 }
+                                 if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) (*_currState)[targetY][targetX] = tileIdxX + tileIdxY * _tileCount.x;
                              }
                          }
                      }
                 }
             }
        }
-
        if (evt.type == SDL_EVENT_MOUSE_BUTTON_UP) { _isPainting = false; _isPanning = false; _isSelectingPalette = false; }
        if (evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_RIGHT) _isPanning = true;
-
        if (evt.type == SDL_EVENT_MOUSE_MOTION) {
            FPoint m = { (f32)evt.motion.x, (f32)evt.motion.y };
            if (GlobalSettings::isEditorMode && _isSelectingPalette && _showPalette) {
@@ -383,56 +328,38 @@ namespace JanSordid::SDL_Example
     }
 
     void EditorState::Update( u64, Duration, f32 deltaT ) {
-        if (!GlobalSettings::isEditorMode)
-        {
-            if (_magic.IsActive())
-            {
-                _magic.Update(deltaT);
-            }
+        if (!GlobalSettings::isEditorMode) {
+            if (_magic.IsActive()) { _magic.Update(deltaT); }
             else {
                 _player.Update(deltaT, *_currState);
-                _bee.Update(deltaT, _player);
+                for (auto& bee : _bees) { bee.Update(deltaT, _player); }
 
-                // Fireballs updaten
-                for (auto& f : _fireballs)
-                {
+                // Fireballs
+                for (auto& f : _fireballs) {
                     if (!f.alive) continue;
-
                     f.lifetime -= deltaT;
-                    if (f.lifetime <= 0.0f)
-                    {
-                        f.alive = false;
-                        continue;
-                    }
-
-                    // Bewegung (World-Koordinaten)
+                    if (f.lifetime <= 0.0f) { f.alive = false; continue; }
                     f.pos.x += f.vel.x * deltaT;
                     f.pos.y += f.vel.y * deltaT;
 
-                    // Kollision mit Bee (einfach: Rect vs Rect)
                     const FRect fbBox  = CircleToRect(f.pos, f.radius);
-                    const FRect beeBox = _bee.GetHitbox();
-
-                    if (SDL_HasRectIntersectionFloat(&fbBox, &beeBox))
-                    {
-                        _bee.TakeDamage(20);
-                        f.alive = false;
+                    for (auto& bee : _bees) {
+                        if (bee.state == BeeState::Dead) continue;
+                        const FRect beeBox = bee.GetHitbox();
+                        if (SDL_HasRectIntersectionFloat(&fbBox, &beeBox)) {
+                            bee.TakeDamage(20); f.alive = false; break;
+                        }
                     }
                 }
-
-                // Tote entfernen (optional, aber sauber)
-                _fireballs.erase(
-                    std::remove_if(_fireballs.begin(), _fireballs.end(),
-                                   [](const auto& f) { return !f.alive; }),
-                    _fireballs.end()
-                );
+                _fireballs.erase(std::remove_if(_fireballs.begin(), _fireballs.end(), [](const auto& f) { return !f.alive; }), _fireballs.end());
 
                 if (_player.isAttacking && _player.currentFrame >= 2 && _player.currentFrame <= 4) {
                     FRect swordBox = _player.GetAttackHitbox();
-                    FRect beeBox = _bee.GetHitbox();
-                    if (SDL_HasRectIntersectionFloat(&swordBox, &beeBox)) {
-                        if (_bee.z < 40) {
-                            _bee.TakeDamage(10);
+                    for (auto& bee : _bees) {
+                        if (bee.state == BeeState::Dead) continue;
+                        FRect beeBox = bee.GetHitbox();
+                        if (SDL_HasRectIntersectionFloat(&swordBox, &beeBox)) {
+                            if (bee.z < 40) { bee.TakeDamage(10); }
                         }
                     }
                 }
@@ -443,9 +370,9 @@ namespace JanSordid::SDL_Example
                 _camera.y += (targetCamY - _camera.y) * 5.0f * deltaT;
             }
             auto res = _magic.ConsumeResult();
-            if (res != FD::Magic::MagicResult::None)
-            {
-                ApplyMagicResult(res, _player, _bee, _fireballs);
+            if (res != FD::Magic::MagicResult::None) {
+                SDL_Log("Geste erkannt! ID: %d", (int)res);
+                ApplyMagicResult(res, _player, _bees, _fireballs);
             }
         }
     }
@@ -453,7 +380,6 @@ namespace JanSordid::SDL_Example
     void EditorState::Render( u64 frames, Duration, f32 deltaTNeeded ) {
        const WorldState & curr = *_currState;
        FPoint mapTS = toF( _tileSize * _mapScale );
-
        SDL_SetRenderDrawColor( renderer(), 30, 30, 30, 255 );
        FRect mapBG = toFRect( _camera, FPoint{(f32)curr[0].size(), (f32)curr.size()} * mapTS );
        SDL_RenderFillRect(renderer(), &mapBG);
@@ -470,55 +396,46 @@ namespace JanSordid::SDL_Example
        }
 
        if (!GlobalSettings::isEditorMode) {
-           if (_player.position.y < _bee.position.y) {
-               _player.Render(renderer(), _camera, _mapScale);
-               _bee.Render(renderer(), _camera, _mapScale);
-           } else {
-               _bee.Render(renderer(), _camera, _mapScale);
-               _player.Render(renderer(), _camera, _mapScale);
-           }
+           _player.Render(renderer(), _camera, _mapScale);
+           for (auto& bee : _bees) { bee.Render(renderer(), _camera, _mapScale); }
        }
 
-       // --- Fireballs rendern (sichtbar machen) ---
+       // --- NEU: TEXTUR-BASIERTES RENDERN ---
        if (!GlobalSettings::isEditorMode)
        {
-           SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND);
-           SDL_SetRenderDrawColor(renderer(), 255, 60, 40, 220);
-
            for (const auto& f : _fireballs)
            {
                if (!f.alive) continue;
-
-               const float r = f.radius * (float)_mapScale;
-
-               SDL_FRect dst = {
+               float r = f.radius * (float)_mapScale;
+               float size = r * 2.0f;
+               JanSordid::SDL::FRect dst = {
                    (f.pos.x * (float)_mapScale) + _camera.x - r,
                    (f.pos.y * (float)_mapScale) + _camera.y - r,
-                   r * 2.0f,
-                   r * 2.0f
+                   size, size
                };
 
-               SDL_RenderFillRect(renderer(), &dst);
+               if (_texFireball) {
+                   double angle = std::atan2(f.vel.y, f.vel.x) * (180.0 / M_PI);
+                   SDL_RenderTextureRotated(renderer(), _texFireball.get(), nullptr, &dst, angle, nullptr, SDL_FLIP_NONE);
+               }
+               else {
+                   SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND);
+                   SDL_SetRenderDrawColor(renderer(), 255, 60, 40, 220);
+                   SDL_RenderFillRect(renderer(), &dst);
+                   SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_NONE);
+               }
            }
-
-           SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_NONE);
        }
+       // -------------------------------------
 
-        if (!GlobalSettings::isEditorMode)
-        {
-            int winW, winH;
-            SDL_GetWindowSize(window(), &winW, &winH);
-
-            FD::Magic::MagicDebugRender::RenderOverlay(
-                renderer(), _magic, winW, winH, _debugTemplate
-            );
+        if (!GlobalSettings::isEditorMode) {
+            int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
+            FD::Magic::MagicDebugRender::RenderOverlay(renderer(), _magic, winW, winH, _debugTemplate);
         }
-
        if(GlobalSettings::isEditorMode) {
            SDL_SetRenderDrawColor( renderer(), 255, 0, 0, 255 );
            SDL_RenderRect( renderer(), &mapBG );
        }
-
        if(GlobalSettings::isEditorMode && _showGrid) {
            SDL_SetRenderDrawColor( renderer(), 255, 255, 255, 50 ); SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND);
            for(size_t y=0; y<curr.size(); ++y) for(size_t x=0; x<curr[y].size(); ++x) {
@@ -526,13 +443,10 @@ namespace JanSordid::SDL_Example
                 SDL_RenderRect(renderer(), &gridR);
            }
        }
-
        if(GlobalSettings::isEditorMode) {
-           float mx, my; SDL_GetMouseState(&mx, &my);
-           FPoint m = { mx, my };
+           float mx, my; SDL_GetMouseState(&mx, &my); FPoint m = { mx, my };
            bool overPalette = _showPalette && (m.x < toF(_tileSetSize*_paletteScale).x && m.y < toF(_tileSetSize*_paletteScale).y);
-
-           if (!overPalette && !_isSelectingPalette) { // NOTE: falls du hier _isSelectingPalette meinst, bitte wieder korrigieren
+           if (!overPalette && !_isSelectingPalette) {
                Point p = toI(m - _camera) / (_tileSize * _mapScale);
                if(p.y >= 0 && (size_t)p.y < curr.size() && p.x >= 0 && (size_t)p.x < curr[0].size()) {
                    SDL_SetTextureAlphaMod(_tileSet.get(), 150);
@@ -550,7 +464,6 @@ namespace JanSordid::SDL_Example
                }
            }
        }
-
        if(GlobalSettings::isEditorMode && _showPalette) {
            FRect r = toFRect(FPoint{0,0}, toF(_tileSize*_paletteScale*_tileCount));
            SDL_SetRenderDrawColor(renderer(), 10, 10, 20, 240); SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND); SDL_RenderFillRect(renderer(), &r);
@@ -560,7 +473,6 @@ namespace JanSordid::SDL_Example
            FRect pickR = toFRect(toF(_tileSize * _paletteScale * _pickedIdx), selectSize);
            SDL_RenderRect(renderer(), &pickR);
        }
-
        if(_font && GlobalSettings::isEditorMode) {
            std::ostringstream oss;
            oss << "Editor Mode\n[ESC] Main Menu\n[TAB] Palette\n [F1] Map verkleinern\n [F2] Map vergrößern\n [F6] Grid aus/an \n[F8] Save [F9] Load";
@@ -575,104 +487,53 @@ namespace JanSordid::SDL_Example
        }
     }
 
-    // =========================================================
-    // MAIN MENU STATE
-    // =========================================================
     void MainMenuState::Init() {
-        if (!_fontTitle) _fontTitle.reset(TTF_OpenFont(BasePathFont "RobotoSlab-Bold.ttf", 60));
-        if (!_fontMenu)  _fontMenu.reset(TTF_OpenFont(BasePathFont "RobotoSlab-Bold.ttf", 30));
-
-        if (!_background) {
-            const char* filename = BasePathGraphic "menu_background.png";
-            auto* surf = IMG_Load(filename);
-            if (surf) {
-                _background.reset(SDL_CreateTextureFromSurface(renderer(), surf));
-                SDL_DestroySurface(surf);
-            }
-        }
-
-        // --- AUDIO FIX ---
-        // 1. SDL Audio Subsystem initialisieren (WICHTIG!)
-        if (SDL_Init(SDL_INIT_AUDIO) < 0) {
-            SDL_Log("SDL_Init(AUDIO) fehlgeschlagen: %s", SDL_GetError());
-        }
-
-        // 2. Mixer öffnen mit 'nullptr' Spec für Auto-Detect
-        if (Mix_OpenAudio(0, nullptr) == 0) { // 0 Success in SDL3 Mixer
-            const char* musicFile = BasePathAudio "hauptmenu_sound.wav"; // WAV nehmen, da MP3 oft DLLs fehlt
-            _bgMusic = Mix_LoadMUS(musicFile);
-            if (_bgMusic) {
-                Mix_VolumeMusic(GlobalSettings::musicVolume);
-                Mix_PlayMusic(_bgMusic, -1);
-                SDL_Log("Musik gestartet: %s", musicFile);
-            } else {
-                SDL_Log("Fehler beim Laden der Musik: %s -> %s", musicFile, SDL_GetError());
-            }
-        } else {
-            SDL_Log("Mixer OpenAudio fehlgeschlagen: %s", SDL_GetError());
-        }
+        std::string fontP = GetAssetPath(BasePathFont "RobotoSlab-Bold.ttf");
+        if (!_fontTitle) _fontTitle.reset(TTF_OpenFont(fontP.c_str(), 60));
+        if (!_fontMenu)  _fontMenu.reset(TTF_OpenFont(fontP.c_str(), 30));
+        std::string bgP = GetAssetPath(BasePathGraphic "menu_background.png");
+        if (!_background) { auto* surf = IMG_Load(bgP.c_str()); if (surf) { _background.reset(SDL_CreateTextureFromSurface(renderer(), surf)); SDL_DestroySurface(surf); } }
+        std::string musicP = GetAssetPath(BasePathAudio "hauptmenu_sound.wav");
+        std::ifstream f(musicP);
+        if (f.good()) {
+            _bgMusic = Mix_LoadMUS(musicP.c_str());
+            if (_bgMusic) { Mix_VolumeMusic(GlobalSettings::musicVolume); Mix_PlayMusic(_bgMusic, -1); SDL_Log("Musik gestartet: %s", musicP.c_str()); }
+            else { SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Musik konnte nicht geladen werden (falsches Format?): %s", SDL_GetError()); }
+        } else { SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Musikdatei nicht gefunden: %s", musicP.c_str()); }
     }
-
-    void MainMenuState::Destroy() {
-        if (_bgMusic) {
-            Mix_HaltMusic();
-            Mix_FreeMusic(_bgMusic);
-            _bgMusic = nullptr;
-        }
-        Mix_CloseAudio();
-        Mix_Quit();
-    }
-
+    void MainMenuState::Destroy() { if (_bgMusic) { Mix_HaltMusic(); Mix_FreeMusic(_bgMusic); _bgMusic = nullptr; } }
     bool MainMenuState::DrawButton(const char* text, float y, float mouseX, float mouseY, bool isClicked) {
-        Color c = { 200, 200, 200, 255 }; bool hovered = false;
-        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
+        Color c = { 200, 200, 200, 255 }; bool hovered = false; int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
         Owned<Surface> s(TTF_RenderText_Blended(_fontMenu.get(), text, 0, c));
         if (s) {
             float w = (float)s->w; float h = (float)s->h; float x = (winW / 2.0f) - (w / 2.0f);
-            if (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h) {
-                s.reset(TTF_RenderText_Blended(_fontMenu.get(), text, 0, {255, 255, 0, 255})); hovered = true;
-            }
+            if (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h) { s.reset(TTF_RenderText_Blended(_fontMenu.get(), text, 0, {255, 255, 0, 255})); hovered = true; }
             Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
             FRect btnR = toFRect(FPoint{x, y}, FPoint{w, h});
             SDL_RenderTexture(renderer(), t.get(), EntireFRect, &btnR);
         }
         return hovered && isClicked;
     }
-
     bool MainMenuState::Input(const Event& event) {
-        const char* defaultPath = "C:\\Users\\frieb\\CLionProjects\\fantasy_dragon\\asset\\map\\";
+        const char* defaultPath = "asset\\map\\";
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
             float mx = (float)event.button.x; float my = (float)event.button.y;
             int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
             float centerY = winH / 2.0f; float spacing = 60.0f; float startY  = centerY - (4 * spacing) / 2.0f + 50.0f;
-
-            if (DrawButton("Spiel starten", startY, mx, my, true)) {
-                SDL_ShowOpenFileDialog(OnSelectMapForGame, &_game, window(), nullptr, 0, defaultPath, false);
-            }
-            else if (DrawButton("Map Creator", startY + spacing, mx, my, true)) {
-                GlobalSettings::isEditorMode = true; _game.ReplaceState((u8)GameStateID::Editor);
-            }
+            if (DrawButton("Spiel starten", startY, mx, my, true)) { SDL_ShowOpenFileDialog(OnSelectMapForGame, &_game, window(), nullptr, 0, defaultPath, false); }
+            else if (DrawButton("Map Creator", startY + spacing, mx, my, true)) { GlobalSettings::isEditorMode = true; _game.ReplaceState((u8)GameStateID::Editor); }
             else if (DrawButton("Settings", startY + spacing*2, mx, my, true)) _game.PushState((u8)GameStateID::Settings);
             else if (DrawButton("Beenden", startY + spacing*3, mx, my, true)) { SDL_Event quit; quit.type = SDL_EVENT_QUIT; SDL_PushEvent(&quit); }
         }
         return true;
     }
-
     void MainMenuState::Render(u64, Duration, f32) {
         int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-
-        if (_background) {
-            SDL_RenderTexture(renderer(), _background.get(), nullptr, nullptr);
-        } else {
-            SDL_SetRenderDrawColor(renderer(), 30, 30, 40, 255);
-            SDL_RenderClear(renderer());
-        }
-
-        Owned<Surface> s(TTF_RenderText_Blended(_fontTitle.get(), " ", 0, {255, 255, 255, 255}));
+        if (_background) { SDL_RenderTexture(renderer(), _background.get(), nullptr, nullptr); } else { SDL_SetRenderDrawColor(renderer(), 30, 30, 40, 255); SDL_RenderClear(renderer()); }
+        Owned<Surface> s(TTF_RenderText_Blended(_fontTitle.get(), "FANTASY DRAGON", 0, {255, 255, 255, 255}));
         if(s) {
             Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
-            float tx = (winW / 2.0f) - (s->w / 2.0f);
-            FRect titleR = toFRect(FPoint{tx, winH * 0.15f}, FPoint{(f32)s->w, (f32)s->h});
+            float tx = (winW / 2.0f) - (s->w / 2.0f); FRect titleR = toFRect(FPoint{tx, winH * 0.15f}, FPoint{(f32)s->w, (f32)s->h});
             SDL_RenderTexture(renderer(), t.get(), EntireFRect, &titleR);
         }
         float mx, my; SDL_GetMouseState(&mx, &my);
@@ -683,132 +544,54 @@ namespace JanSordid::SDL_Example
         DrawButton("Beenden",       startY + spacing*3, mx, my, false);
     }
 
-    // =========================================================
-    // SETTINGS STATE
-    // =========================================================
     void SettingsState::Init() {
-        if (!_font) _font.reset(TTF_OpenFont(BasePathFont "RobotoSlab-Bold.ttf", 30));
-
-        if (!_background) {
-            const char* filename = BasePathGraphic "menu_settings.png";
-            auto* surf = IMG_Load(filename);
-            if (surf) {
-                _background.reset(SDL_CreateTextureFromSurface(renderer(), surf));
-                SDL_DestroySurface(surf);
-            }
-        }
+        std::string fontP = GetAssetPath(BasePathFont "RobotoSlab-Bold.ttf"); if (!_font) _font.reset(TTF_OpenFont(fontP.c_str(), 30));
+        std::string bgP = GetAssetPath(BasePathGraphic "menu_settings.png"); if (!_background) { auto* surf = IMG_Load(bgP.c_str()); if (surf) { _background.reset(SDL_CreateTextureFromSurface(renderer(), surf)); SDL_DestroySurface(surf); } }
     }
-
     bool SettingsState::DrawSlider(const char* label, float y, float mouseX, float mouseY, bool isMouseDown) {
         int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-
-        float sliderWidth = 300.0f;
-        float sliderHeight = 10.0f;
-        float sliderX = (winW / 2.0f) - (sliderWidth / 2.0f);
-        float sliderY = y + 40.0f;
-
+        float sliderWidth = 300.0f; float sliderHeight = 10.0f; float sliderX = (winW / 2.0f) - (sliderWidth / 2.0f); float sliderY = y + 40.0f;
         Owned<Surface> s(TTF_RenderText_Blended(_font.get(), label, 0, {200, 200, 200, 255}));
-        if(s) {
-            float tw = (float)s->w; float th = (float)s->h;
-            FRect tRect = { (winW / 2.0f) - (tw/2.0f), y, tw, th };
-            Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
-            SDL_RenderTexture(renderer(), t.get(), nullptr, &tRect);
-        }
-
-        FRect track = { sliderX, sliderY, sliderWidth, sliderHeight };
-        SDL_SetRenderDrawColor(renderer(), 100, 100, 100, 255);
-        SDL_RenderFillRect(renderer(), &track);
-
-        float pct = (float)GlobalSettings::musicVolume / 128.0f;
-        float knobX = sliderX + (pct * sliderWidth);
-        FRect knob = { knobX - 10.0f, sliderY - 5.0f, 20.0f, 20.0f };
-
-        SDL_SetRenderDrawColor(renderer(), 255, 200, 0, 255);
-        SDL_RenderFillRect(renderer(), &knob);
-
+        if(s) { float tw = (float)s->w; float th = (float)s->h; FRect tRect = { (winW / 2.0f) - (tw/2.0f), y, tw, th }; Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get())); SDL_RenderTexture(renderer(), t.get(), nullptr, &tRect); }
+        FRect track = { sliderX, sliderY, sliderWidth, sliderHeight }; SDL_SetRenderDrawColor(renderer(), 100, 100, 100, 255); SDL_RenderFillRect(renderer(), &track);
+        float pct = (float)GlobalSettings::musicVolume / 128.0f; float knobX = sliderX + (pct * sliderWidth); FRect knob = { knobX - 10.0f, sliderY - 5.0f, 20.0f, 20.0f }; SDL_SetRenderDrawColor(renderer(), 255, 200, 0, 255); SDL_RenderFillRect(renderer(), &knob);
         if (isMouseDown) {
-            if (mouseX >= sliderX && mouseX <= sliderX + sliderWidth &&
-                mouseY >= sliderY - 20.0f && mouseY <= sliderY + 30.0f)
-            {
-                float newPct = (mouseX - sliderX) / sliderWidth;
-                if (newPct < 0) newPct = 0;
-                if (newPct > 1) newPct = 1;
-
-                int newVol = (int)(newPct * 128.0f);
-                if (newVol != GlobalSettings::musicVolume) {
-                    GlobalSettings::musicVolume = newVol;
-                    Mix_VolumeMusic(newVol);
-                    return true;
-                }
+            if (mouseX >= sliderX && mouseX <= sliderX + sliderWidth && mouseY >= sliderY - 20.0f && mouseY <= sliderY + 30.0f) {
+                float newPct = (mouseX - sliderX) / sliderWidth; if (newPct < 0) newPct = 0; if (newPct > 1) newPct = 1;
+                int newVol = (int)(newPct * 128.0f); if (newVol != GlobalSettings::musicVolume) { GlobalSettings::musicVolume = newVol; Mix_VolumeMusic(newVol); return true; }
             }
         }
         return false;
     }
-
     bool SettingsState::DrawButton(const char* text, float y, float mouseX, float mouseY, bool isClicked) {
-        Color c = { 200, 200, 200, 255 }; bool hovered = false;
-        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
+        Color c = { 200, 200, 200, 255 }; bool hovered = false; int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
         Owned<Surface> s(TTF_RenderText_Blended(_font.get(), text, 0, c));
         if(s) {
             float w = (float)s->w; float h = (float)s->h; float x = (winW / 2.0f) - (w / 2.0f);
-            if (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h) {
-                s.reset(TTF_RenderText_Blended(_font.get(), text, 0, {255, 255, 0, 255})); hovered = true;
-            }
-            Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
-            FRect btnR = toFRect(FPoint{x, y}, FPoint{w, h});
-            SDL_RenderTexture(renderer(), t.get(), EntireFRect, &btnR);
+            if (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h) { s.reset(TTF_RenderText_Blended(_font.get(), text, 0, {255, 255, 0, 255})); hovered = true; }
+            Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get())); FRect btnR = toFRect(FPoint{x, y}, FPoint{w, h}); SDL_RenderTexture(renderer(), t.get(), EntireFRect, &btnR);
         }
         return hovered && isClicked;
     }
-
     bool SettingsState::Input(const Event& event) {
-        float mx = 0, my = 0;
-        SDL_GetMouseState(&mx, &my);
-        bool isDown = (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK);
-
-        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-        float centerY = winH / 2.0f; float spacing = 80.0f; float startY = centerY - (3 * spacing) / 2.0f;
-
-        if (isDown) {
-            std::string volTxt = "Lautstärke: " + std::to_string((int)((GlobalSettings::musicVolume / 128.0f) * 100)) + "%";
-            DrawSlider(volTxt.c_str(), startY, mx, my, true);
-        }
-
+        float mx = 0, my = 0; SDL_GetMouseState(&mx, &my); bool isDown = (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK);
+        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH); float centerY = winH / 2.0f; float spacing = 80.0f; float startY = centerY - (3 * spacing) / 2.0f;
+        if (isDown) { std::string volTxt = "Lautstaerke: " + std::to_string((int)((GlobalSettings::musicVolume / 128.0f) * 100)) + "%"; DrawSlider(volTxt.c_str(), startY, mx, my, true); }
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
-            float clickX = (float)event.button.x;
-            float clickY = (float)event.button.y;
-
+            float clickX = (float)event.button.x; float clickY = (float)event.button.y;
             std::string screenText = std::string("Modus: ") + (GlobalSettings::isFullscreen ? "Vollbild" : "Fenster");
-            if (DrawButton(screenText.c_str(), startY + spacing, clickX, clickY, true)) {
-                GlobalSettings::isFullscreen = !GlobalSettings::isFullscreen;
-                SDL_SetWindowFullscreen(window(), GlobalSettings::isFullscreen ? SDL_WINDOW_FULLSCREEN : 0);
-            }
-            if (DrawButton("Zurück", startY + spacing*2, clickX, clickY, true)) _game.PopState();
+            if (DrawButton(screenText.c_str(), startY + spacing, clickX, clickY, true)) { GlobalSettings::isFullscreen = !GlobalSettings::isFullscreen; SDL_SetWindowFullscreen(window(), GlobalSettings::isFullscreen ? SDL_WINDOW_FULLSCREEN : 0); }
+            if (DrawButton("Zurueck", startY + spacing*2, clickX, clickY, true)) _game.PopState();
         }
-
         if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE) _game.PopState();
         return true;
     }
-
     void SettingsState::Render(u64, Duration, f32) {
         int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-
-        if (_background) {
-            SDL_RenderTexture(renderer(), _background.get(), nullptr, nullptr);
-        } else {
-            SDL_SetRenderDrawColor(renderer(), 40, 30, 30, 255);
-            SDL_RenderClear(renderer());
-        }
-
-        float mx, my; SDL_GetMouseState(&mx, &my);
-        float centerY = winH / 2.0f; float spacing = 80.0f; float startY = centerY - (3 * spacing) / 2.0f;
-
-        std::string volTxt = "Lautstärke: " + std::to_string((int)((GlobalSettings::musicVolume / 128.0f) * 100)) + "%";
-        DrawSlider(volTxt.c_str(), startY, mx, my, false);
-
-        std::string screenText = std::string("Modus: ") + (GlobalSettings::isFullscreen ? "Vollbild" : "Fenster");
-        DrawButton(screenText.c_str(), startY + spacing, mx, my, false);
-
-        DrawButton("Zurück", startY + spacing*2, mx, my, false);
+        if (_background) { SDL_RenderTexture(renderer(), _background.get(), nullptr, nullptr); } else { SDL_SetRenderDrawColor(renderer(), 40, 30, 30, 255); SDL_RenderClear(renderer()); }
+        float mx, my; SDL_GetMouseState(&mx, &my); float centerY = winH / 2.0f; float spacing = 80.0f; float startY = centerY - (3 * spacing) / 2.0f;
+        std::string volTxt = "Lautstaerke: " + std::to_string((int)((GlobalSettings::musicVolume / 128.0f) * 100)) + "%"; DrawSlider(volTxt.c_str(), startY, mx, my, false);
+        std::string screenText = std::string("Modus: ") + (GlobalSettings::isFullscreen ? "Vollbild" : "Fenster"); DrawButton(screenText.c_str(), startY + spacing, mx, my, false);
+        DrawButton("Zurueck", startY + spacing*2, mx, my, false);
     }
 }

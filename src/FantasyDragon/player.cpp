@@ -3,8 +3,9 @@
 #include <iostream>
 #include <cmath>
 
+// --- FIX: PFADE ---
 #ifndef BasePathGraphic
-#define BasePathGraphic "asset/graphics/"
+#define BasePathGraphic "asset/graphic/"
 #endif
 
 namespace JanSordid::SDL_Example
@@ -30,7 +31,8 @@ namespace JanSordid::SDL_Example
     }
 
     void Player::Init(SDL_Renderer* renderer) {
-        const char* filename = BasePathGraphic "adventurer-v1.5-Sheet.png";
+        // --- FIX: HARTE PFAD ANGABE (Sicher ist sicher) ---
+        const char* filename = "asset/graphic/adventurer-v1.5-Sheet.png";
 
         auto* surfRaw = IMG_Load(filename);
         Owned<SDL_Surface> surf(surfRaw);
@@ -38,6 +40,7 @@ namespace JanSordid::SDL_Example
         if(!surf) {
              SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Spieler Sprite fehlt: %s", filename);
         } else {
+             SDL_Log("Spieler Sprite geladen: %s", filename);
              spriteSheet.reset(SDL_CreateTextureFromSurface(renderer, surf.get()));
         }
 
@@ -99,13 +102,18 @@ namespace JanSordid::SDL_Example
     }
 
     bool Player::CheckCollision(const FRect& rect, const MapType& map) {
+        // --- DYNAMISCH: Wir holen die Größe aus der Map ---
+        int mapWidth  = (int)map[0].size(); // Holt sich z.B. 160
+        int mapHeight = (int)map.size();    // Holt sich z.B. 20
+
         int minX = (int)(rect.x / 16.0f);
         int maxX = (int)((rect.x + rect.w - 0.1f) / 16.0f);
         int minY = (int)(rect.y / 16.0f);
         int maxY = (int)((rect.y + rect.h - 0.1f) / 16.0f);
 
-        if (minX < 0) minX = 0; if (maxX >= 40) maxX = 39;
-        if (minY < 0) minY = 0; if (maxY >= 20) maxY = 19;
+        // Grenzen dynamisch prüfen
+        if (minX < 0) minX = 0; if (maxX >= mapWidth) maxX = mapWidth - 1;
+        if (minY < 0) minY = 0; if (maxY >= mapHeight) maxY = mapHeight - 1;
 
         for (int y = minY; y <= maxY; ++y) {
             for (int x = minX; x <= maxX; ++x) {
@@ -119,9 +127,13 @@ namespace JanSordid::SDL_Example
         // NEU: Timer runterzählen
         if (hitTimer > 0.0f) hitTimer -= dt;
 
+        // --- DYNAMISCHE MAP GRÖSSE ---
+        float mapPixelW = (float)(map[0].size() * 16);
+        float mapPixelH = (float)(map.size() * 16);
+
         const float GRAVITY = 600.0f;
-        const float MOVE_SPEED_X = 80.0f;
-        const float MOVE_SPEED_Y = 50.0f;
+        const float MOVE_SPEED_X = 140.0f; // Etwas schneller
+        const float MOVE_SPEED_Y = 100.0f;
 
         const bool* state = SDL_GetKeyboardState(nullptr);
 
@@ -138,7 +150,7 @@ namespace JanSordid::SDL_Example
                 currentAnim = PlayerAnim::Jump;
             } else {
                 if (velocity.x != 0 || velocity.y != 0) currentAnim = PlayerAnim::Run;
-                else if (state[SDL_SCANCODE_Q] && velocity.y == 0) currentAnim = PlayerAnim::Crouch;
+                else if (state[SDL_SCANCODE_LCTRL] && velocity.y == 0) currentAnim = PlayerAnim::Crouch;
                 else currentAnim = PlayerAnim::Idle;
             }
         }
@@ -158,10 +170,13 @@ namespace JanSordid::SDL_Example
         z += velZ * dt;
         if (z <= 0.0f) { z = 0.0f; velZ = 0.0f; }
 
-        // Grenzen
-        if (position.x < 0) position.x = 0; if (position.y < 0) position.y = 0;
-        if (position.x > 40*16 - size.x) position.x = 40*16 - size.x;
-        if (position.y > 20*16 - size.y) position.y = 20*16 - size.y;
+        // --- GRENZEN (DYNAMISCH) ---
+        // Verhindert, dass der Spieler aus der Map läuft
+        if (position.x < 0) position.x = 0;
+        if (position.y < 0) position.y = 0;
+
+        if (position.x > mapPixelW - size.x) position.x = mapPixelW - size.x;
+        if (position.y > mapPixelH - size.y) position.y = mapPixelH - size.y;
 
         // --- ANIMATION UPDATE ---
         animTimer += dt;

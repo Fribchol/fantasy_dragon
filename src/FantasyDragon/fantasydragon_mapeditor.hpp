@@ -20,16 +20,22 @@
 #include <cstdint>
 #include <filesystem>
 
-// WICHTIG: Wir entfernen hier "asset/", da GetAssetPath das erledigt
-#ifndef BasePathFont
+// --- CMAKE OVERRIDE FIX ---
+#ifdef BasePathFont
+#undef BasePathFont
+#endif
 #define BasePathFont "font/"
+
+#ifdef BasePathGraphic
+#undef BasePathGraphic
 #endif
-#ifndef BasePathGraphic
 #define BasePathGraphic "graphic/"
+
+#ifdef BasePathAudio
+#undef BasePathAudio
 #endif
-#ifndef BasePathAudio
 #define BasePathAudio "sound/"
-#endif
+// ---------------------------
 
 #if __has_include("hsnr64/tiles.hpp")
     #include "hsnr64/tiles.hpp"
@@ -74,7 +80,6 @@ namespace JanSordid::SDL_Example
         static bool isEditorMode;
     };
 
-    // Hilfsfunktion Deklaration
     std::string GetAssetPath(const std::string& subPath);
 
     // =========================
@@ -90,13 +95,12 @@ namespace JanSordid::SDL_Example
         };
 
     public:
-        // --- öffentlich, damit in .cpp nutzbar ---
         struct FireballProjectile
         {
             FPoint pos{};
-            FPoint vel{};          // Pixel/Sekunde in World-Koordinaten
+            FPoint vel{};
             float  z = 0.0f;
-            float  radius = 10.0f; // World-Pixel vor Scale
+            float  radius = 10.0f;
             float  lifetime = 1.2f;
             bool   alive = true;
         };
@@ -113,6 +117,10 @@ namespace JanSordid::SDL_Example
         Owned<Font>    _font;
         Owned<Texture> _tileSet;
 
+        // --- NEU: Textur Variable für den Feuerball ---
+        Owned<Texture> _texFireball;
+        // ---------------------------------------------
+
         using WorldState = MapType;
 
         const bool _doGenerateEmptyMap = true;
@@ -127,7 +135,8 @@ namespace JanSordid::SDL_Example
         FPoint _camera;
 
         Player _player;
-        Bee _bee;
+        std::vector<Bee> _bees;
+
         FD::Magic::MagicSystem _magic;
         int _manaDummy = 100;
 

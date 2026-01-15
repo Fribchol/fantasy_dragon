@@ -14,11 +14,13 @@ namespace JanSordid::SDL_Example
 
     template <typename T> using Owned = std::unique_ptr<T>;
 
+    // --- ÄNDERUNG: Neuer Zustand "Idle" ---
     enum class BeeState {
-        Fly,
-        Attack,
-        Hit,
-        Dead
+        Idle,   // Wartet friedlich (schwebt nur)
+        Fly,    // Verfolgt den Spieler (Aggro)
+        Attack, // Sticht zu
+        Hit,    // Wurde getroffen
+        Dead    // Tot
     };
 
     struct Bee {
@@ -31,7 +33,12 @@ namespace JanSordid::SDL_Example
         int hp = 30;
         bool facingRight = false;
 
-        BeeState state = BeeState::Fly;
+        // --- ÄNDERUNG: Startet jetzt im Idle-Modus ---
+        BeeState state = BeeState::Idle;
+
+        // --- ÄNDERUNG: Radius, ab dem der Spieler angegriffen wird ---
+        float aggroRadius = 250.0f;
+
         float stateTimer = 0.0f;
         int currentFrame = 0;
         float animTimer = 0.0f;

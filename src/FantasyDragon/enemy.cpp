@@ -1,17 +1,20 @@
 #include "enemy.hpp"
+// Player muss inkludiert sein, da wir ihn im Update benutzen
+#include "player.hpp"
+
 #include <SDL3_image/SDL_image.h>
 #include <cmath>
 #include <iostream>
 
-#ifndef BasePathGraphic
-#define BasePathGraphic "asset/graphics/"
-#endif
-
 namespace JanSordid::SDL_Example
 {
+    // Helper Funktion zum Laden
     static Owned<Texture> LoadTex(SDL_Renderer* r, const char* file) {
         auto* s = IMG_Load(file);
-        if(!s) { SDL_Log("Fehler beim Laden: %s", file); return nullptr; }
+        if(!s) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Enemy-Bild fehlt: %s", file);
+            return nullptr;
+        }
         return Owned<Texture>(SDL_CreateTextureFromSurface(r, s));
     }
 
@@ -39,9 +42,16 @@ namespace JanSordid::SDL_Example
 
     void Bee::Init(SDL_Renderer* renderer, float startX, float startY) {
         position = { startX, startY };
-        texFly    = LoadTex(renderer, BasePathGraphic "Bee-Fly-Sheet.png");
-        texAttack = LoadTex(renderer, BasePathGraphic "Bee-Attack-Sheet.png");
-        texHit    = LoadTex(renderer, BasePathGraphic "Bee-Hit-Sheet.png");
+        hp = 30; // 3 Leben (1 Schlag = 10 Schaden)
+
+        // --- ÄNDERUNG: Startet friedlich ---
+        state = BeeState::Idle;
+
+        // --- FIX: PFADE HARTKODIERT ---
+        texFly    = LoadTex(renderer, "asset/graphic/Bee-Fly-Sheet.png");
+        texAttack = LoadTex(renderer, "asset/graphic/Bee-Attack-Sheet.png");
+        texHit    = LoadTex(renderer, "asset/graphic/Bee-Hit-Sheet.png");
+
         shadowTexture.reset(CreateEnemyShadow(renderer));
     }
 
@@ -73,6 +83,7 @@ namespace JanSordid::SDL_Example
 
         if (attackCooldown > 0) attackCooldown -= dt;
 
+        // Distanz zum Spieler berechnen
         float distX = (player.position.x + player.size.x/2) - (position.x + size.x/2);
         float distY = (player.position.y + player.size.y/2) - (position.y + size.y/2);
         float dist = std::sqrt(distX*distX + distY*distY);
@@ -83,6 +94,18 @@ namespace JanSordid::SDL_Example
         }
 
         switch (state) {
+            // --- NEU: IDLE LOGIK ---
+            case BeeState::Idle:
+                // Schwebt nur hoch und runter (Sinus-Welle)
+                z = 20.0f + std::sin(SDL_GetTicks() / 200.0f) * 5.0f;
+                velocity = {0, 0};
+
+                // Wenn Spieler nah genug ist -> ANGRIFF (Wechsel zu Fly)
+                if (dist < aggroRadius) {
+                    state = BeeState::Fly;
+                }
+                break;
+
             case BeeState::Fly:
                 if (dist > 30.0f) {
                     float speed = 60.0f;
@@ -97,6 +120,11 @@ namespace JanSordid::SDL_Example
                     }
                 }
                 z = 20.0f + std::sin(SDL_GetTicks() / 200.0f) * 5.0f;
+
+                // Optional: Wenn Spieler zu weit wegrennt, wieder Idle?
+                if (dist > aggroRadius * 2.0f) {
+                    state = BeeState::Idle;
+                }
                 break;
 
             case BeeState::Attack:
@@ -143,16 +171,17 @@ namespace JanSordid::SDL_Example
     void Bee::Render(SDL_Renderer* r, FPoint cam, int scale) {
         if (state == BeeState::Dead) return;
 
-        Texture* t = texFly.get();
+        Texture* t = texFly.get(); // Idle benutzt auch Fly-Texture
         if (state == BeeState::Attack) t = texAttack.get();
         if (state == BeeState::Hit) t = texHit.get();
+
+        // Wenn Texture nicht geladen wurde (nullptr), hier abbrechen, sonst Absturz!
         if (!t) return;
 
         // --- SCHATTEN ---
         if (shadowTexture) {
             float shadowW = 20.0f * scale;
             float shadowH = 10.0f * scale;
-
 
             // Schatten Scale
             float manualOffsetX = 15.0f * scale; // Nach Rechts schieben

@@ -5,6 +5,7 @@
 #include <fstream>
 #include <filesystem>
 #include <string>
+#include <vector>    // Wichtig für den Buffer
 
 namespace fs = std::filesystem;
 
@@ -57,6 +58,8 @@ namespace JanSordid::FantasyDragon::Magic
         return drawing;
     }
 
+    // --- FIX: ASCII-ART LADEN & ZENTRIEREN ---
+    // Diese Funktion liest deine .txt Bilder mit # und schiebt sie in die Mitte des Grids.
     bool MagicSystem::LoadTemplateTxt(const char* filePath, Template64& out)
     {
         std::ifstream in(filePath);
@@ -65,24 +68,57 @@ namespace JanSordid::FantasyDragon::Magic
         out.mask.Clear();
         out.onCount = 0;
 
+        std::vector<std::string> lines;
         std::string line;
-        int y = 0;
 
-        while (std::getline(in, line) && y < Grid64::H)
-        {
-            // Erlaubt: kürzere Zeilen -> Rest gilt als '.'
-            for (int x = 0; x < Grid64::W && x < (int)line.size(); ++x)
-            {
-                if (line[x] == '#')
-                {
-                    out.mask.Set(x, y);
+        // 1. Erstmal alles in einen Puffer lesen
+        while (std::getline(in, line)) {
+            lines.push_back(line);
+        }
+
+        if (lines.empty()) return false;
+
+        // 2. Wir suchen die Ränder deines Bildes (#)
+        int minX = 9999, maxX = -1;
+        int minY = 9999, maxY = -1;
+        bool foundAny = false;
+
+        for (int y = 0; y < (int)lines.size(); ++y) {
+            for (int x = 0; x < (int)lines[y].size(); ++x) {
+                if (lines[y][x] == '#') {
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                    foundAny = true;
+                }
+            }
+        }
+
+        if (!foundAny) return false; // Leere Datei oder keine #
+
+        // 3. Größe und notwendige Verschiebung berechnen (Zentrierung)
+        int contentW = maxX - minX + 1;
+        int contentH = maxY - minY + 1;
+
+        // Ziel: Mitte des 64x64 Grids
+        int targetX = (Grid64::W - contentW) / 2;
+        int targetY = (Grid64::H - contentH) / 2;
+
+        // 4. Pixel in die Maske schreiben (verschoben)
+        for (int y = minY; y <= maxY; ++y) {
+            for (int x = minX; x <= maxX; ++x) {
+                if (lines[y][x] == '#') {
+                    // Original Position -> Zentrierte Position
+                    int finalX = targetX + (x - minX);
+                    int finalY = targetY + (y - minY);
+
+                    out.mask.Set(finalX, finalY);
                     out.onCount++;
                 }
             }
-            y++;
         }
 
-        // Mindestanforderung: Template muss “irgendwas” enthalten
         return (out.onCount > 0);
     }
 
@@ -116,6 +152,7 @@ namespace JanSordid::FantasyDragon::Magic
             t.name = name ? name : filename;
 
             fs::path p = folder / filename;
+            // Wir nutzen die neue ASCII-Ladefunktion
             if (!LoadTemplateTxt(p.string().c_str(), t)) return false;
 
             templates.push_back(std::move(t));
@@ -123,9 +160,11 @@ namespace JanSordid::FantasyDragon::Magic
         };
 
         bool ok = true;
-        ok &= loadOne("fireball.txt", MagicResult::Fireball, "fireball");
-        ok &= loadOne("heal.txt",     MagicResult::Heal,     "heal");
-        return ok && !templates.empty();
+        // Versuchen beide zu laden, Fehler ignorieren wir kurz, hauptsache eins klappt
+        loadOne("fireball.txt", MagicResult::Fireball, "fireball");
+        loadOne("heal.txt",     MagicResult::Heal,     "heal");
+
+        return !templates.empty();
     }
 
     const MagicSystem::Grid64* MagicSystem::GetTemplateMask(MagicResult spell) const
@@ -151,18 +190,18 @@ namespace JanSordid::FantasyDragon::Magic
 
         if (drawnOn == 0) return MagicResult::Fail;
 
-        // Scoring-Parameter
-        const float extraPenalty = 1.2f;  // Strafe für “zu viel gemalt”
-        const float minScore     = 0.32f; // Schwelle: je höher, desto strenger
+        // Scoring-Parameter - etwas toleranter eingestellt
+        const float extraPenalty = 1.0f;
+        const float minScore     = 0.25f; // 25% Übereinstimmung reicht schon
 
         MagicResult bestSpell = MagicResult::Fail;
         float bestScore = 0.0f;
 
         for (const auto& t : templates)
         {
-            int hits = 0;    // drawn=1 & templ=1
-            int missing = 0; // drawn=0 & templ=1
-            int extra = 0;   // drawn=1 & templ=0
+            int hits = 0;
+            int missing = 0;
+            int extra = 0;
 
             for (int y = 0; y < Grid64::H; ++y)
             {
@@ -177,8 +216,6 @@ namespace JanSordid::FantasyDragon::Magic
                 }
             }
 
-            // Normalisierung: Treffer relativ zu “was man treffen sollte”
-            // + Strafe für extra pixels
             const float denom = float(hits + missing) + float(extra) * extraPenalty;
             const float score = (denom <= 0.0f) ? 0.0f : (float(hits) / denom);
 
@@ -201,14 +238,9 @@ namespace JanSordid::FantasyDragon::Magic
     void MagicSystem::BeginCast(int& mana)
     {
         if (active) return;
-
-        // TODO: Mana-Kosten festlegen
-        // mana -= X;
-
         active = true;
         timer  = 3.0f;
         result = MagicResult::None;
-
         ClearDrawing();
     }
 
@@ -217,7 +249,6 @@ namespace JanSordid::FantasyDragon::Magic
         active = false;
         timer  = 0.0f;
         result = MagicResult::None;
-
         ClearDrawing();
     }
 
@@ -229,9 +260,7 @@ namespace JanSordid::FantasyDragon::Magic
         if (timer <= 0.0f)
         {
             timer = 0.0f;
-
             result = EvaluateDrawing();
-
             active = false;
             drawingActive = false;
         }
@@ -241,15 +270,12 @@ namespace JanSordid::FantasyDragon::Magic
 
     bool MagicSystem::ScreenToGrid(int sx, int sy, int& outGX, int& outGY) const
     {
-        // nur innerhalb des Canvas zeichnen
         if (sx < canvas.x || sy < canvas.y || sx >= canvas.x + canvas.w || sy >= canvas.y + canvas.h)
             return false;
 
-        // Screen -> [0..1)
         const float nx = float(sx - canvas.x) / float(canvas.w);
         const float ny = float(sy - canvas.y) / float(canvas.h);
 
-        // -> Grid
         int gx = int(nx * Grid64::W);
         int gy = int(ny * Grid64::H);
 

@@ -6,10 +6,15 @@
 #include <memory>
 #include <cstdint>
 
+// --- FIX: WIR HOLEN DIE ECHTE DEFINITION (160) ---
+#include "hsnr64/tiles.hpp"
+
 namespace JanSordid::SDL_Example
 {
-    // MapType Definition
-    using MapType = std::array<std::array<int, 40>, 20>;
+    // --- FIX: KEINE HARTE ZAHL MEHR ---
+    // Wir sagen: "MapType ist das, was in tiles.hpp steht (JanSordid::HSNR64::MapType)"
+    // Damit ist es automatisch 160 breit!
+    using MapType = JanSordid::HSNR64::MapType;
 
     using u8  = std::uint8_t;
     using f32 = float;
@@ -38,10 +43,10 @@ namespace JanSordid::SDL_Example
         float z = 0.0f;
         float velZ = 0.0f;
 
-        // --- NEU: KAMPF STATS ---
+        // --- KAMPF STATS ---
         int hp = 100;
         float hitTimer = 0.0f; // Für Unverwundbarkeit
-        // ------------------------
+        // -------------------
 
         FPoint size = { 16.0f, 16.0f };
         FPoint spriteOffset = { -17.0f, -28.0f };
@@ -58,14 +63,17 @@ namespace JanSordid::SDL_Example
 
         // Haupt-Funktionen
         void Init(SDL_Renderer* renderer);
+
+        // Update nutzt jetzt automatisch die große Map (160)
         void Update(float dt, const MapType& map);
+
         void Input(const Event& evt);
         void Render(SDL_Renderer* renderer, FPoint camera, int scale);
 
-        // --- NEU: KAMPF FUNKTIONEN ---
+        // --- KAMPF FUNKTIONEN ---
         void TakeDamage(int amount);
         FRect GetAttackHitbox() const;
-        // -----------------------------
+        // ------------------------
 
     private:
         bool CheckCollision(const FRect& rect, const MapType& map);
