@@ -41,6 +41,10 @@
     #include "hsnr64/tiles.hpp"
 #endif
 
+namespace JanSordid::SDL_Example {
+
+}
+
 namespace FD = JanSordid::FantasyDragon;
 
 namespace JanSordid::SDL_Example
@@ -113,21 +117,21 @@ namespace JanSordid::SDL_Example
         void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
         constexpr Color clearColor() const noexcept override { return Color{ 100, 100, 100, 255 }; }
 
+        using WorldState = Array<MapType, 3>;
+
     private:
         Owned<Font>    _font;
         Owned<Texture> _tileSet;
 
-        // --- NEU: Textur Variable für den Feuerball ---
         Owned<Texture> _texFireball;
-        // ---------------------------------------------
-
-        using WorldState = MapType;
 
         const bool _doGenerateEmptyMap = true;
         WorldState _worldState1;
         WorldState _worldState2;
         WorldState* _currState = &_worldState1;
         WorldState* _nextState = &_worldState2;
+
+        int _activeLayer = 0;
 
         Point  _tileSetSize;
         Point  _tileSize;
@@ -157,6 +161,11 @@ namespace JanSordid::SDL_Example
 
         constexpr static Duration UpdateDeltaTime = 16ms;
         Duration _nextUpdateTime = {};
+
+        // --- NEUE VARIABLEN FÜR DAS LEVEL-ENDE ---
+        FRect _chestHitbox;  // Wo steht die Kiste?
+        bool _levelFinished = false;
+        float _finishTimer = 0.0f;
     };
 
     // =========================

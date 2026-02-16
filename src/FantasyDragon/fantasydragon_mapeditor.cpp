@@ -41,28 +41,40 @@ namespace JanSordid::SDL_Example
         return "asset/" + subPath;
     }
 
-    void SaveMapToFile(const std::string& filename, const MapType& map) {
+    void SaveMapToFile(const std::string& filename, const EditorState::WorldState& layers) {
         std::ofstream file(filename);
         if (file.is_open()) {
-            for (const auto& row : map) {
-                for (size_t i = 0; i < row.size(); ++i) file << row[i] << (i < row.size() - 1 ? " " : "");
-                file << "\n";
+            for (int l = 0; l < 3; ++l) {
+                file << "[Layer" << l << "]\n";
+                for (const auto& row : layers[l]) {
+                    for (size_t i = 0; i < row.size(); ++i) file << row[i] << (i < row.size() - 1 ? " " : "");
+                    file << "\n";
+                }
             }
             file.close();
-            SDL_Log("Map gespeichert: %s", filename.c_str());
+            SDL_Log("Map (3 Layer) gespeichert: %s", filename.c_str());
         }
     }
 
-    bool LoadMapFromFile(const std::string& filename, MapType& map) {
+    bool LoadMapFromFile(const std::string& filename, EditorState::WorldState& layers) {
         std::ifstream file(filename);
         if (file.is_open()) {
-            for (auto& row : map) {
-                 for (size_t i = 0; i < row.size(); ++i) {
-                     if (!(file >> row[i])) { row[i] = 0; file.clear(); }
-                 }
+            std::string line;
+            int currentLayer = -1;
+            int rowIdx = 0;
+            while (std::getline(file, line)) {
+                if (line.empty()) continue;
+                if (line.find("[Layer") != std::string::npos) { currentLayer++; rowIdx = 0; continue; }
+                if (currentLayer >= 0 && currentLayer < 3 && rowIdx < (int)layers[0].size()) {
+                    std::stringstream ss(line);
+                    for (size_t i = 0; i < layers[0][0].size(); ++i) {
+                        if (!(ss >> layers[currentLayer][rowIdx][i])) { layers[currentLayer][rowIdx][i] = 0; }
+                    }
+                    rowIdx++;
+                }
             }
             file.close();
-            SDL_Log("Map geladen: %s", filename.c_str());
+            SDL_Log("Map (3 Layer) geladen: %s", filename.c_str());
             return true;
         }
         return false;
@@ -70,14 +82,14 @@ namespace JanSordid::SDL_Example
 
     void SDLCALL OnMapSave(void* userdata, const char* const* filelist, int filter) {
         if (!filelist || !filelist[0]) return;
-        auto* map = static_cast<MapType*>(userdata);
-        if(map) SaveMapToFile(filelist[0], *map);
+        auto* layers = static_cast<EditorState::WorldState*>(userdata);
+        if(layers) SaveMapToFile(filelist[0], *layers);
     }
 
     void SDLCALL OnMapLoad(void* userdata, const char* const* filelist, int filter) {
         if (!filelist || !filelist[0]) return;
-        auto* map = static_cast<MapType*>(userdata);
-        if(map) LoadMapFromFile(filelist[0], *map);
+        auto* layers = static_cast<EditorState::WorldState*>(userdata);
+        if(layers) LoadMapFromFile(filelist[0], *layers);
     }
 
     void SDLCALL OnSelectMapForGame(void* userdata, const char* const* filelist, int filter) {
@@ -148,12 +160,8 @@ namespace JanSordid::SDL_Example
         }
     }
 
-    // =========================================================
-    // EDITOR STATE
-    // =========================================================
     void EditorState::Init() {
-       int echteBreite = (int)(*_currState)[0].size();
-       SDL_Log("!!! DEBUG: DIE MAP IST %d BLÖCKE BREIT !!!", echteBreite);
+       int echteBreite = (int)(*_currState)[0][0].size();
        SDL_Log("--- INIT STATE ---");
 
        std::string fontP = GetAssetPath(BasePathFont "RobotoSlab-Bold.ttf");
@@ -177,7 +185,6 @@ namespace JanSordid::SDL_Example
           SDL_SetTextureScaleMode( _tileSet.get(), SDL_ScaleMode::SDL_SCALEMODE_NEAREST );
        }
 
-       // --- NEU: FEUERBALL LADEN ---
        if (!_texFireball) {
            std::string fbPath = GetAssetPath(BasePathGraphic "fire.png");
            auto* surf = IMG_Load(fbPath.c_str());
@@ -188,22 +195,42 @@ namespace JanSordid::SDL_Example
                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Feuerball Textur fehlt: %s", fbPath.c_str());
            }
        }
-       // ----------------------------
 
        if( _doGenerateEmptyMap ) {
-          const int FillTile = 0; const int BorderTile = 0;
-          for( auto & row : *_currState ) { row.fill( FillTile ); *row.begin() = BorderTile; *row.rbegin() = BorderTile; }
-          (*_currState->begin()).fill( BorderTile ); (*_currState->rbegin()).fill( BorderTile );
+          const int FillTile = 0;
+          for(int l = 0; l < 3; ++l) {
+              for( auto & row : (*_currState)[l] ) { row.fill( FillTile ); }
+          }
        }
 
        if (!GlobalSettings::isEditorMode) {
            _player.Init(renderer());
 
+           // --- GEGNER SPAWNING (Gruppen) ---
            _bees.clear();
-           // Biene 1
-           { Bee b; b.Init(renderer(), 1200.0f, 200.0f); _bees.push_back(std::move(b)); }
-           // Biene 2
-           { Bee b; b.Init(renderer(), 2300.0f, 150.0f); _bees.push_back(std::move(b)); }
+
+           auto SpawnBee = [&](float x, float y) {
+               Bee b;
+               b.Init(renderer(), x, y);
+               _bees.push_back(std::move(b));
+           };
+
+           // --- GRUPPE 1 ---
+           SpawnBee(1200.0f, 220.0f);
+
+           // --- GRUPPE 2 ---
+           SpawnBee(3000.0f, 150.0f);
+           SpawnBee(3080.0f, 250.0f);
+           SpawnBee(3150.0f, 180.0f);
+
+           // --- GRUPPE 3 (Ende) ---
+           SpawnBee(6200.0f, 120.0f);
+           SpawnBee(6280.0f, 280.0f);
+           SpawnBee(6350.0f, 200.0f);
+           SpawnBee(6420.0f, 150.0f);
+           SpawnBee(6500.0f, 250.0f);
+
+           // ---------------------------------
 
            int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
            _magic.SetCanvasRect((winW - 256) / 2, (winH - 256) / 2, 256, 256);
@@ -222,7 +249,7 @@ namespace JanSordid::SDL_Example
        }
 
        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-       float mapPixelH = (float)( (*_currState).size() * 16 * _mapScale );
+       float mapPixelH = (float)( (*_currState)[0].size() * 16 * _mapScale );
        _camera.x = 50.0f;
        _camera.y = (winH / 2.0f) - (mapPixelH / 2.0f);
        _paletteScale = 1;
@@ -234,6 +261,15 @@ namespace JanSordid::SDL_Example
            if (!g_PendingGameMap.empty()) { LoadMapFromFile(g_PendingGameMap, *_currState); g_PendingGameMap = ""; }
        }
        _pickedSize = { 1, 1 }; _pickedIdx = { 0, 0 }; _isSelectingPalette = false;
+       _activeLayer = 0;
+
+       // --- NEU: KISTE UND LEVEL-STATUS INITIALISIEREN ---
+       // Ich setze die Kiste auf X=6700 (Hinter der letzten Gegnergruppe)
+       // und Y=240 (ungefähr Bodenhöhe).
+       // Du kannst diese Zahlen ändern, wenn du die Kiste im Editor woanders gemalt hast.
+       _chestHitbox = { 6700.0f, 240.0f, 32.0f, 32.0f };
+       _levelFinished = false;
+       _finishTimer = 0.0f;
     }
 
     void EditorState::Destroy() {}
@@ -246,13 +282,18 @@ namespace JanSordid::SDL_Example
                if (evt.key.scancode == SDL_SCANCODE_TAB && evt.key.repeat == 0) _showPalette = !_showPalette;
                if (evt.key.scancode == SDL_SCANCODE_F8) SDL_ShowSaveFileDialog(OnMapSave, _currState, window(), nullptr, 0, defaultPath);
                if (evt.key.scancode == SDL_SCANCODE_F9) SDL_ShowOpenFileDialog(OnMapLoad, _currState, window(), nullptr, 0, defaultPath, false);
+
+               if (evt.key.scancode == SDL_SCANCODE_1) _activeLayer = 0;
+               if (evt.key.scancode == SDL_SCANCODE_2) _activeLayer = 1;
+               if (evt.key.scancode == SDL_SCANCODE_3) _activeLayer = 2;
+
                if (evt.key.scancode == SDL_SCANCODE_F1) _mapScale = 1;
                if (evt.key.scancode == SDL_SCANCODE_F2) _mapScale = 2;
                if (evt.key.scancode == SDL_SCANCODE_F6 && evt.key.repeat == 0) _showGrid = !_showGrid;
            }
        }
 
-        if (!GlobalSettings::isEditorMode) {
+        if (!GlobalSettings::isEditorMode && !_levelFinished) { // Input nur wenn Level nicht fertig
             if (evt.type == SDL_EVENT_KEY_DOWN && evt.key.repeat == 0) {
                 if (evt.key.scancode == SDL_SCANCODE_E) _magic.BeginCast(_manaDummy);
                 if (evt.key.scancode == SDL_SCANCODE_ESCAPE && _magic.IsActive()) _magic.Cancel();
@@ -282,13 +323,14 @@ namespace JanSordid::SDL_Example
             if (!clickedInsidePalette) {
                 _isPainting = true;
                 Point p = toI(m - _camera) / (_tileSize * _mapScale);
-                if(p.y >= 0 && (size_t)p.y < _currState->size() && p.x >= 0 && (size_t)p.x < (*_currState)[0].size()) {
+                auto& curLayerMap = (*_currState)[_activeLayer];
+                if(p.y >= 0 && (size_t)p.y < curLayerMap.size() && p.x >= 0 && (size_t)p.x < curLayerMap[0].size()) {
                      for(int py = 0; py < _pickedSize.y; ++py) {
                          for(int px = 0; px < _pickedSize.x; ++px) {
                              int targetX = p.x + px; int targetY = p.y + py;
-                             if(targetY >= 0 && (size_t)targetY < _currState->size() && targetX >= 0 && (size_t)targetX < (*_currState)[0].size()) {
+                             if(targetY >= 0 && (size_t)targetY < curLayerMap.size() && targetX >= 0 && (size_t)targetX < curLayerMap[0].size()) {
                                  int tileIdxX = _pickedIdx.x + px; int tileIdxY = _pickedIdx.y + py;
-                                 if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) (*_currState)[targetY][targetX] = tileIdxX + tileIdxY * _tileCount.x;
+                                 if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) curLayerMap[targetY][targetX] = tileIdxX + tileIdxY * _tileCount.x;
                              }
                          }
                      }
@@ -311,12 +353,13 @@ namespace JanSordid::SDL_Example
                bool overPalette = _showPalette && (m.x < toF(_tileSetSize*_paletteScale).x && m.y < toF(_tileSetSize*_paletteScale).y);
                if(!overPalette && !_isSelectingPalette) {
                    Point p = toI(m - _camera) / (_tileSize * _mapScale);
+                   auto& curLayerMap = (*_currState)[_activeLayer];
                    for(int py = 0; py < _pickedSize.y; ++py) {
                          for(int px = 0; px < _pickedSize.x; ++px) {
                              int targetX = p.x + px; int targetY = p.y + py;
-                             if(targetY >= 0 && (size_t)targetY < _currState->size() && targetX >= 0 && (size_t)targetX < (*_currState)[0].size()) {
+                             if(targetY >= 0 && (size_t)targetY < curLayerMap.size() && targetX >= 0 && (size_t)targetX < curLayerMap[0].size()) {
                                  int tileIdxX = _pickedIdx.x + px; int tileIdxY = _pickedIdx.y + py;
-                                 if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) (*_currState)[targetY][targetX] = tileIdxX + tileIdxY * _tileCount.x;
+                                 if (tileIdxX < _tileCount.x && tileIdxY < _tileCount.y) curLayerMap[targetY][targetX] = tileIdxX + tileIdxY * _tileCount.x;
                              }
                          }
                    }
@@ -329,12 +372,22 @@ namespace JanSordid::SDL_Example
 
     void EditorState::Update( u64, Duration, f32 deltaT ) {
         if (!GlobalSettings::isEditorMode) {
+
+            // --- NEU: GEWONNEN LOGIK ---
+            if (_levelFinished) {
+                _finishTimer += deltaT;
+                // Warte 3 Sekunden, dann zurück ins Hauptmenü
+                if (_finishTimer > 3.0f) {
+                    _game.ReplaceState((u8)GameStateID::MainMenu);
+                }
+                return; // Spiel friert quasi ein (kein Player/Enemy Update), nur Timer läuft
+            }
+
             if (_magic.IsActive()) { _magic.Update(deltaT); }
             else {
                 _player.Update(deltaT, *_currState);
                 for (auto& bee : _bees) { bee.Update(deltaT, _player); }
 
-                // Fireballs
                 for (auto& f : _fireballs) {
                     if (!f.alive) continue;
                     f.lifetime -= deltaT;
@@ -355,12 +408,20 @@ namespace JanSordid::SDL_Example
 
                 if (_player.isAttacking && _player.currentFrame >= 2 && _player.currentFrame <= 4) {
                     FRect swordBox = _player.GetAttackHitbox();
+
+                    // 1. Gegner prüfen
                     for (auto& bee : _bees) {
                         if (bee.state == BeeState::Dead) continue;
                         FRect beeBox = bee.GetHitbox();
                         if (SDL_HasRectIntersectionFloat(&swordBox, &beeBox)) {
                             if (bee.z < 40) { bee.TakeDamage(10); }
                         }
+                    }
+
+                    // 2. NEU: Kiste prüfen
+                    if (SDL_HasRectIntersectionFloat(&swordBox, &_chestHitbox)) {
+                        SDL_Log(">>> KISTE GETROFFEN! LEVEL GESCHAFFT! <<<");
+                        _levelFinished = true;
                     }
                 }
                 int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
@@ -377,16 +438,20 @@ namespace JanSordid::SDL_Example
         }
     }
 
-    void EditorState::Render( u64 frames, Duration, f32 deltaTNeeded ) {
-       const WorldState & curr = *_currState;
+   void EditorState::Render( u64 frames, Duration, f32 deltaTNeeded ) {
+       const auto& refLayer = (*_currState)[0];
        FPoint mapTS = toF( _tileSize * _mapScale );
        SDL_SetRenderDrawColor( renderer(), 30, 30, 30, 255 );
-       FRect mapBG = toFRect( _camera, FPoint{(f32)curr[0].size(), (f32)curr.size()} * mapTS );
+       FRect mapBG = toFRect( _camera, FPoint{(f32)refLayer[0].size(), (f32)refLayer.size()} * mapTS );
        SDL_RenderFillRect(renderer(), &mapBG);
 
-       for( size_t y = 0; y < curr.size(); ++y ) {
-          for( size_t x = 0; x < curr[y].size(); ++x ) {
-             int idx = curr[y][x];
+       // 1. Hintergrund
+       const auto& backgroundLayer = (*_currState)[0];
+       if(GlobalSettings::isEditorMode && _activeLayer != 0) SDL_SetTextureAlphaMod(_tileSet.get(), 100);
+
+       for( size_t y = 0; y < backgroundLayer.size(); ++y ) {
+          for( size_t x = 0; x < backgroundLayer[y].size(); ++x ) {
+             int idx = backgroundLayer[y][x];
              if (idx == 0) continue;
              Point tIdx = { idx % _tileCount.x, idx / _tileCount.x };
              FRect srcR = toFRect( toF(tIdx * _tileSize), toF(_tileSize) );
@@ -394,61 +459,127 @@ namespace JanSordid::SDL_Example
              SDL_RenderTexture( renderer(), _tileSet.get(), &srcR, &dstR );
           }
        }
+       if(GlobalSettings::isEditorMode) SDL_SetTextureAlphaMod(_tileSet.get(), 255);
 
-       if (!GlobalSettings::isEditorMode) {
-           _player.Render(renderer(), _camera, _mapScale);
-           for (auto& bee : _bees) { bee.Render(renderer(), _camera, _mapScale); }
+       // 2. Spielebene
+       const auto& layer1 = (*_currState)[1];
+
+       for( size_t y = 0; y < layer1.size(); ++y ) {
+          if(GlobalSettings::isEditorMode && _activeLayer != 1) SDL_SetTextureAlphaMod(_tileSet.get(), 100);
+          for( size_t x = 0; x < layer1[y].size(); ++x ) {
+             int idx = layer1[y][x];
+             if (idx != 0) {
+                 Point tIdx = { idx % _tileCount.x, idx / _tileCount.x };
+                 FRect srcR = toFRect( toF(tIdx * _tileSize), toF(_tileSize) );
+                 FRect dstR = toFRect( FPoint{(f32)x, (f32)y} * mapTS + _camera, mapTS );
+                 SDL_RenderTexture( renderer(), _tileSet.get(), &srcR, &dstR );
+             }
+          }
+          if(GlobalSettings::isEditorMode) SDL_SetTextureAlphaMod(_tileSet.get(), 255);
+
+          if (!GlobalSettings::isEditorMode) {
+              float playerFootY = _player.position.y + _player.size.y;
+              int playerTileRow = (int)(playerFootY / 16.0f);
+
+              if (playerTileRow == (int)y) {
+                  _player.Render(renderer(), _camera, _mapScale);
+              }
+
+              for (auto& bee : _bees) {
+                  int beeTileRow = (int)((bee.position.y + 16.0f) / 16.0f);
+                  if (beeTileRow == (int)y) bee.Render(renderer(), _camera, _mapScale);
+              }
+          }
        }
 
-       // --- NEU: TEXTUR-BASIERTES RENDERN ---
-       if (!GlobalSettings::isEditorMode)
-       {
-           for (const auto& f : _fireballs)
-           {
+       // 3. Vordergrund
+       const auto& layer2 = (*_currState)[2];
+       if(GlobalSettings::isEditorMode && _activeLayer != 2) SDL_SetTextureAlphaMod(_tileSet.get(), 100);
+
+       for( size_t y = 0; y < layer2.size(); ++y ) {
+          for( size_t x = 0; x < layer2[y].size(); ++x ) {
+             int idx = layer2[y][x];
+             if (idx != 0) {
+                 Point tIdx = { idx % _tileCount.x, idx / _tileCount.x };
+                 FRect srcR = toFRect( toF(tIdx * _tileSize), toF(_tileSize) );
+                 FRect dstR = toFRect( FPoint{(f32)x, (f32)y} * mapTS + _camera, mapTS );
+                 SDL_RenderTexture( renderer(), _tileSet.get(), &srcR, &dstR );
+             }
+          }
+       }
+       if(GlobalSettings::isEditorMode) SDL_SetTextureAlphaMod(_tileSet.get(), 255);
+
+       // 4. Overlays & UI
+       if (!GlobalSettings::isEditorMode) {
+           for (const auto& f : _fireballs) {
                if (!f.alive) continue;
                float r = f.radius * (float)_mapScale;
                float size = r * 2.0f;
-               JanSordid::SDL::FRect dst = {
-                   (f.pos.x * (float)_mapScale) + _camera.x - r,
-                   (f.pos.y * (float)_mapScale) + _camera.y - r,
-                   size, size
-               };
-
+               JanSordid::SDL::FRect dst = { (f.pos.x * (float)_mapScale) + _camera.x - r, (f.pos.y * (float)_mapScale) + _camera.y - r, size, size };
                if (_texFireball) {
                    double angle = std::atan2(f.vel.y, f.vel.x) * (180.0 / M_PI);
                    SDL_RenderTextureRotated(renderer(), _texFireball.get(), nullptr, &dst, angle, nullptr, SDL_FLIP_NONE);
-               }
-               else {
+               } else {
                    SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND);
                    SDL_SetRenderDrawColor(renderer(), 255, 60, 40, 220);
                    SDL_RenderFillRect(renderer(), &dst);
                    SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_NONE);
                }
            }
-       }
-       // -------------------------------------
+           int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
+           FD::Magic::MagicDebugRender::RenderOverlay(renderer(), _magic, winW, winH, _debugTemplate);
 
-        if (!GlobalSettings::isEditorMode) {
-            int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-            FD::Magic::MagicDebugRender::RenderOverlay(renderer(), _magic, winW, winH, _debugTemplate);
-        }
+           // --- NEU: ANZEIGE LEVEL GESCHAFFT ---
+           if (_levelFinished && _font) {
+               const char* msg = "LEVEL GESCHAFFT!";
+               Color gold = {255, 215, 0, 255};
+               Color black = {0, 0, 0, 255};
+
+               // Hilfs-Lambda um Text zu rendern
+               auto DrawTextCentered = [&](const char* txt, int y, Color c) {
+                   Owned<Surface> s(TTF_RenderText_Blended(_font.get(), txt, 0, c));
+                   if(s) {
+                       Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
+                       FRect r = toFRect(FPoint{ (winW/2.0f) - (s->w/2.0f), (f32)y }, FPoint{(f32)s->w, (f32)s->h});
+                       SDL_RenderTexture(renderer(), t.get(), EntireFRect, &r);
+                   }
+               };
+
+               // Ein bisschen Schatten für Lesbarkeit
+               DrawTextCentered(msg, winH / 2 - 50 + 4, black);
+               DrawTextCentered(msg, winH / 2 - 50, gold);
+           }
+       }
+
        if(GlobalSettings::isEditorMode) {
            SDL_SetRenderDrawColor( renderer(), 255, 0, 0, 255 );
            SDL_RenderRect( renderer(), &mapBG );
-       }
-       if(GlobalSettings::isEditorMode && _showGrid) {
-           SDL_SetRenderDrawColor( renderer(), 255, 255, 255, 50 ); SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND);
-           for(size_t y=0; y<curr.size(); ++y) for(size_t x=0; x<curr[y].size(); ++x) {
-                FRect gridR = toFRect(FPoint{(f32)x, (f32)y}*mapTS+_camera, mapTS);
-                SDL_RenderRect(renderer(), &gridR);
+
+           // --- NEU: KISTEN DEBUG ANZEIGE ---
+           // Zeigt ein CYAN Rechteck, wo die Kiste im Code ist
+           SDL_SetRenderDrawColor(renderer(), 0, 255, 255, 255);
+           FRect debugChest = _chestHitbox;
+           debugChest.x = (debugChest.x * _mapScale) + _camera.x;
+           debugChest.y = (debugChest.y * _mapScale) + _camera.y;
+           debugChest.w *= _mapScale;
+           debugChest.h *= _mapScale;
+           SDL_RenderRect(renderer(), &debugChest);
+           // ---------------------------------
+
+           if(_showGrid) {
+               SDL_SetRenderDrawColor( renderer(), 255, 255, 255, 50 ); SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND);
+               for(size_t y=0; y<refLayer.size(); ++y) for(size_t x=0; x<refLayer[y].size(); ++x) {
+                    FRect gridR = toFRect(FPoint{(f32)x, (f32)y}*mapTS+_camera, mapTS);
+                    SDL_RenderRect(renderer(), &gridR);
+               }
            }
-       }
-       if(GlobalSettings::isEditorMode) {
+
            float mx, my; SDL_GetMouseState(&mx, &my); FPoint m = { mx, my };
            bool overPalette = _showPalette && (m.x < toF(_tileSetSize*_paletteScale).x && m.y < toF(_tileSetSize*_paletteScale).y);
            if (!overPalette && !_isSelectingPalette) {
                Point p = toI(m - _camera) / (_tileSize * _mapScale);
-               if(p.y >= 0 && (size_t)p.y < curr.size() && p.x >= 0 && (size_t)p.x < curr[0].size()) {
+               const auto& curLayerMap = (*_currState)[_activeLayer];
+               if(p.y >= 0 && (size_t)p.y < curLayerMap.size() && p.x >= 0 && (size_t)p.x < curLayerMap[0].size()) {
                    SDL_SetTextureAlphaMod(_tileSet.get(), 150);
                    for(int py = 0; py < _pickedSize.y; ++py) {
                        for(int px = 0; px < _pickedSize.x; ++px) {
@@ -463,26 +594,30 @@ namespace JanSordid::SDL_Example
                    SDL_SetTextureAlphaMod(_tileSet.get(), 255);
                }
            }
-       }
-       if(GlobalSettings::isEditorMode && _showPalette) {
-           FRect r = toFRect(FPoint{0,0}, toF(_tileSize*_paletteScale*_tileCount));
-           SDL_SetRenderDrawColor(renderer(), 10, 10, 20, 240); SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND); SDL_RenderFillRect(renderer(), &r);
-           SDL_RenderTexture(renderer(), _tileSet.get(), EntireFRect, &r);
-           SDL_SetRenderDrawColor(renderer(), 255, 255, 0, 255);
-           FPoint selectSize = toF(_tileSize * _paletteScale * _pickedSize);
-           FRect pickR = toFRect(toF(_tileSize * _paletteScale * _pickedIdx), selectSize);
-           SDL_RenderRect(renderer(), &pickR);
-       }
-       if(_font && GlobalSettings::isEditorMode) {
-           std::ostringstream oss;
-           oss << "Editor Mode\n[ESC] Main Menu\n[TAB] Palette\n [F1] Map verkleinern\n [F2] Map vergrößern\n [F6] Grid aus/an \n[F8] Save [F9] Load";
-           Owned<Surface> s(TTF_RenderText_Blended_Wrapped(_font.get(), oss.str().c_str(), 0, {255,255,255,255}, 800));
-           if(s) {
-               Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
-               FPoint pos = { 10.0f, 10.0f };
-               if(_showPalette) pos.x = (f32)(_tileSetSize.x * _paletteScale) + 20.0f;
-               FRect textR = toFRect(pos, FPoint{(f32)s->w, (f32)s->h});
-               SDL_RenderTexture(renderer(), t.get(), EntireFRect, &textR);
+
+           if(_showPalette) {
+               FRect r = toFRect(FPoint{0,0}, toF(_tileSize*_paletteScale*_tileCount));
+               SDL_SetRenderDrawColor(renderer(), 10, 10, 20, 240); SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND); SDL_RenderFillRect(renderer(), &r);
+               SDL_RenderTexture(renderer(), _tileSet.get(), EntireFRect, &r);
+               SDL_SetRenderDrawColor(renderer(), 255, 255, 0, 255);
+               FPoint selectSize = toF(_tileSize * _paletteScale * _pickedSize);
+               FRect pickR = toFRect(toF(_tileSize * _paletteScale * _pickedIdx), selectSize);
+               SDL_RenderRect(renderer(), &pickR);
+           }
+
+           if(_font) {
+               std::ostringstream oss;
+               std::string layerName = (_activeLayer == 0) ? "1: HINTERGRUND" : (_activeLayer == 1) ? "2: SPIELEBENE" : "3: VORDERGRUND";
+               oss << "Editor Mode - AKTIVER LAYER: " << layerName << "\n[1,2,3] Layer wechseln\n[ESC] Main Menu\n[TAB] Palette\n[F1,F2] Zoom\n[F6] Grid\n[F8] Save [F9] Load";
+
+               Owned<Surface> s(TTF_RenderText_Blended_Wrapped(_font.get(), oss.str().c_str(), 0, {255,255,255,255}, 800));
+               if(s) {
+                   Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
+                   FPoint pos = { 10.0f, 10.0f };
+                   if(_showPalette) pos.x = (f32)(_tileSetSize.x * _paletteScale) + 20.0f;
+                   FRect textR = toFRect(pos, FPoint{(f32)s->w, (f32)s->h});
+                   SDL_RenderTexture(renderer(), t.get(), EntireFRect, &textR);
+               }
            }
        }
     }
@@ -493,7 +628,7 @@ namespace JanSordid::SDL_Example
         if (!_fontMenu)  _fontMenu.reset(TTF_OpenFont(fontP.c_str(), 30));
         std::string bgP = GetAssetPath(BasePathGraphic "menu_background.png");
         if (!_background) { auto* surf = IMG_Load(bgP.c_str()); if (surf) { _background.reset(SDL_CreateTextureFromSurface(renderer(), surf)); SDL_DestroySurface(surf); } }
-        std::string musicP = GetAssetPath(BasePathAudio "hauptmenu_sound.wav");
+        std::string musicP = GetAssetPath(BasePathAudio "hauptmenu_sound.mp3");
         std::ifstream f(musicP);
         if (f.good()) {
             _bgMusic = Mix_LoadMUS(musicP.c_str());
@@ -545,6 +680,7 @@ namespace JanSordid::SDL_Example
     }
 
     void SettingsState::Init() {
+        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
         std::string fontP = GetAssetPath(BasePathFont "RobotoSlab-Bold.ttf"); if (!_font) _font.reset(TTF_OpenFont(fontP.c_str(), 30));
         std::string bgP = GetAssetPath(BasePathGraphic "menu_settings.png"); if (!_background) { auto* surf = IMG_Load(bgP.c_str()); if (surf) { _background.reset(SDL_CreateTextureFromSurface(renderer(), surf)); SDL_DestroySurface(surf); } }
     }

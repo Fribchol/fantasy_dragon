@@ -3,7 +3,6 @@
 #include <iostream>
 #include <cmath>
 
-// --- FIX: PFADE ---
 #ifndef BasePathGraphic
 #define BasePathGraphic "asset/graphic/"
 #endif
@@ -31,17 +30,15 @@ namespace JanSordid::SDL_Example
     }
 
     void Player::Init(SDL_Renderer* renderer) {
-        // --- FIX: HARTE PFAD ANGABE (Sicher ist sicher) ---
         const char* filename = "asset/graphic/adventurer-v1.5-Sheet.png";
 
         auto* surfRaw = IMG_Load(filename);
-        Owned<SDL_Surface> surf(surfRaw);
-
-        if(!surf) {
+        if(!surfRaw) {
              SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Spieler Sprite fehlt: %s", filename);
         } else {
              SDL_Log("Spieler Sprite geladen: %s", filename);
-             spriteSheet.reset(SDL_CreateTextureFromSurface(renderer, surf.get()));
+             spriteSheet.reset(SDL_CreateTextureFromSurface(renderer, surfRaw));
+             SDL_DestroySurface(surfRaw);
         }
 
         shadowTexture.reset(CreateShadowTexture(renderer));
@@ -50,25 +47,19 @@ namespace JanSordid::SDL_Example
         velocity = { 0.0f, 0.0f };
         z = 0.0f;
         velZ = 0.0f;
-
-        // NEU: Init Stats
         hp = 100;
         hitTimer = 0.0f;
     }
 
-    // --- NEU: SCHADEN NEHMEN ---
     void Player::TakeDamage(int amount) {
-        if (hitTimer > 0.0f) return; // Unverwundbar
+        if (hitTimer > 0.0f) return;
         hp -= amount;
-        hitTimer = 0.5f; // 0.5 Sekunden Schutz (blinkt rot/transparent)
-        velocity.y = -50.0f; // Kleiner Rückstoß
+        hitTimer = 0.5f;
+        velZ = 100.0f; // Kleiner Hüpfer bei Schaden
     }
 
-    // --- NEU: HITBOX FÜR ANGRIFF ---
     FRect Player::GetAttackHitbox() const {
         if (!isAttacking) return {0,0,0,0};
-
-        // Einfache Annahme: Schwert trifft vor dem Spieler
         float reach = 30.0f;
         float xOff = facingRight ? size.x : -reach;
         return { position.x + xOff, position.y, reach, size.y };
@@ -76,7 +67,6 @@ namespace JanSordid::SDL_Example
 
     void Player::Input(const Event& evt) {
         if (isAttacking) return;
-
         const float JUMP_FORCE = 400.0f;
 
         if (evt.type == SDL_EVENT_KEY_DOWN && evt.key.repeat == 0) {
@@ -88,7 +78,6 @@ namespace JanSordid::SDL_Example
                     animTimer = 0;
                 }
             }
-
             if (evt.key.scancode == SDL_SCANCODE_KP_4 ) {
                 isAttacking = true; currentAnim = PlayerAnim::Attack1; currentFrame = 0; animTimer = 0;
             }
@@ -102,16 +91,14 @@ namespace JanSordid::SDL_Example
     }
 
     bool Player::CheckCollision(const FRect& rect, const MapType& map) {
-        // --- DYNAMISCH: Wir holen die Größe aus der Map ---
-        int mapWidth  = (int)map[0].size(); // Holt sich z.B. 160
-        int mapHeight = (int)map.size();    // Holt sich z.B. 20
+        int mapWidth  = (int)map[0].size();
+        int mapHeight = (int)map.size();
 
         int minX = (int)(rect.x / 16.0f);
         int maxX = (int)((rect.x + rect.w - 0.1f) / 16.0f);
         int minY = (int)(rect.y / 16.0f);
         int maxY = (int)((rect.y + rect.h - 0.1f) / 16.0f);
 
-        // Grenzen dynamisch prüfen
         if (minX < 0) minX = 0; if (maxX >= mapWidth) maxX = mapWidth - 1;
         if (minY < 0) minY = 0; if (maxY >= mapHeight) maxY = mapHeight - 1;
 
@@ -123,20 +110,19 @@ namespace JanSordid::SDL_Example
         return false;
     }
 
-    void Player::Update(float dt, const MapType& map) {
-        // NEU: Timer runterzählen
+    void Player::Update(float dt, const WorldState& world) {
         if (hitTimer > 0.0f) hitTimer -= dt;
 
-        // --- DYNAMISCHE MAP GRÖSSE ---
-        float mapPixelW = (float)(map[0].size() * 16);
-        float mapPixelH = (float)(map.size() * 16);
+        // Wir nutzen Layer 1 (Main) für die Größen-Referenz und Kollision
+        const auto& collisionMap = world[1];
+        float mapPixelW = (float)(collisionMap[0].size() * 16);
+        float mapPixelH = (float)(collisionMap.size() * 16);
 
-        const float GRAVITY = 600.0f;
-        const float MOVE_SPEED_X = 140.0f; // Etwas schneller
+        const float GRAVITY = 981.0f;
+        const float MOVE_SPEED_X = 140.0f;
         const float MOVE_SPEED_Y = 100.0f;
 
         const bool* state = SDL_GetKeyboardState(nullptr);
-
         velocity = { 0.0f, 0.0f };
 
         if (!isAttacking) {
@@ -145,92 +131,57 @@ namespace JanSordid::SDL_Example
             if (state[SDL_SCANCODE_W]) { velocity.y = -MOVE_SPEED_Y; }
             if (state[SDL_SCANCODE_S]) { velocity.y =  MOVE_SPEED_Y; }
 
-            // Animation Auswahl
             if (z > 0.1f) {
                 currentAnim = PlayerAnim::Jump;
             } else {
                 if (velocity.x != 0 || velocity.y != 0) currentAnim = PlayerAnim::Run;
-                else if (state[SDL_SCANCODE_LCTRL] && velocity.y == 0) currentAnim = PlayerAnim::Crouch;
+                else if (state[SDL_SCANCODE_LCTRL]) currentAnim = PlayerAnim::Crouch;
                 else currentAnim = PlayerAnim::Idle;
             }
         }
 
-        // Physik X
+        // Kollisionsprüfung gegen Layer 1
         position.x += velocity.x * dt;
         FRect hitBoxX = { position.x, position.y, size.x, size.y / 2.0f };
-        if (CheckCollision(hitBoxX, map)) position.x -= velocity.x * dt;
+        if (CheckCollision(hitBoxX, collisionMap)) position.x -= velocity.x * dt;
 
-        // Physik Y
         position.y += velocity.y * dt;
         FRect hitBoxY = { position.x, position.y, size.x, size.y / 2.0f };
-        if (CheckCollision(hitBoxY, map)) position.y -= velocity.y * dt;
+        if (CheckCollision(hitBoxY, collisionMap)) position.y -= velocity.y * dt;
 
-        // Physik Z
         velZ -= GRAVITY * dt;
         z += velZ * dt;
         if (z <= 0.0f) { z = 0.0f; velZ = 0.0f; }
 
-        // --- GRENZEN (DYNAMISCH) ---
-        // Verhindert, dass der Spieler aus der Map läuft
         if (position.x < 0) position.x = 0;
         if (position.y < 0) position.y = 0;
-
         if (position.x > mapPixelW - size.x) position.x = mapPixelW - size.x;
         if (position.y > mapPixelH - size.y) position.y = mapPixelH - size.y;
 
-        // --- ANIMATION UPDATE ---
         animTimer += dt;
-
         float frameTime = 0.1f;
         int startCol = 0;
         int frameCount = 4;
         bool loop = true;
 
         switch(currentAnim) {
-            case PlayerAnim::Idle:
-                startCol = 0; frameCount = 4; frameTime = 0.32f;
-                break;
-
-            case PlayerAnim::Run:
-                startCol = 1; frameCount = 5; frameTime = 0.32f;
-                break;
-
-            case PlayerAnim::Crouch:
-                startCol = 4; frameCount = 3; frameTime = 0.32f;
-                break;
-
-            case PlayerAnim::Jump:
-                startCol = 0;
-                frameCount = 10; frameTime = 0.16f;
-                loop = false;
-                break;
-
-            case PlayerAnim::Attack1:
-                startCol = 0; frameCount = 5; frameTime = 0.12f; loop = false;
-                break;
-            case PlayerAnim::Attack2:
-                startCol = 0; frameCount = 4; frameTime = 0.12f; loop = false;
-                break;
-            case PlayerAnim::Attack3:
-                startCol = 5; frameCount = 7; frameTime = 0.12f; loop = false;
-                break;
-        }
-
-        // Sicherheitscheck
-        if (currentFrame < startCol || currentFrame >= startCol + frameCount) {
-            currentFrame = startCol;
+            case PlayerAnim::Idle:    startCol = 0; frameCount = 4; frameTime = 0.15f; break;
+            case PlayerAnim::Run:     startCol = 1; frameCount = 6; frameTime = 0.1f; break;
+            case PlayerAnim::Crouch:  startCol = 4; frameCount = 4; frameTime = 0.15f; break;
+            case PlayerAnim::Jump:    startCol = 0; frameCount = 10; frameTime = 0.08f; loop = false; break;
+            case PlayerAnim::Attack1: startCol = 0; frameCount = 5; frameTime = 0.08f; loop = false; break;
+            case PlayerAnim::Attack2: startCol = 0; frameCount = 4; frameTime = 0.08f; loop = false; break;
+            case PlayerAnim::Attack3: startCol = 0; frameCount = 6; frameTime = 0.08f; loop = false; break;
         }
 
         if (animTimer >= frameTime) {
             animTimer = 0;
             currentFrame++;
-
             if (currentFrame >= startCol + frameCount) {
-                if (loop) {
-                    currentFrame = startCol;
-                } else {
+                if (loop) currentFrame = startCol;
+                else {
                     currentFrame = startCol + frameCount - 1;
-                    if (isAttacking) { isAttacking = false; }
+                    if (isAttacking) isAttacking = false;
                 }
             }
         }
@@ -238,79 +189,36 @@ namespace JanSordid::SDL_Example
 
     void Player::Render(SDL_Renderer* renderer, FPoint camera, int scale) {
         if (!spriteSheet) return;
+        if (hitTimer > 0.0f && (int)(hitTimer * 15) % 2 == 0) return;
 
-        // NEU: Blinken wenn getroffen
-        if (hitTimer > 0.0f && (int)(hitTimer * 10) % 2 == 0) return;
-
-        // Schatten
         if (shadowTexture) {
             float shadowW = 20.0f * scale; float shadowH = 10.0f * scale;
-            JanSordid::SDL::FRect shadowRect = {
+            FRect shadowRect = {
                 (position.x * scale) + camera.x + (size.x * scale / 2.0f) - (shadowW / 2.0f),
                 (position.y * scale) + camera.y + (size.y * scale / 2.0f),
                 shadowW, shadowH
             };
-            float scaleFactor = 1.0f - (z / 200.0f); if (scaleFactor < 0.5f) scaleFactor = 0.5f;
-            shadowRect.w *= scaleFactor; shadowRect.h *= scaleFactor;
-            shadowRect.x += (shadowW - shadowRect.w) / 2.0f; shadowRect.y += (shadowH - shadowRect.h) / 2.0f;
             SDL_RenderTexture(renderer, shadowTexture.get(), nullptr, &shadowRect);
         }
 
-        // Spieler
-        int spriteW = 50;
-        int spriteH = 37;
-
-        // Diese Variablen berechnen wir jetzt dynamisch:
-        int row = 0;
-        int col = currentFrame; // Standard: Spalte = aktueller Frame
+        int spriteW = 50; int spriteH = 37;
+        int row = 0; int col = currentFrame;
 
         switch(currentAnim) {
             case PlayerAnim::Idle:    row = 0; break;
             case PlayerAnim::Run:     row = 1; break;
-            case PlayerAnim::Crouch:  row = 0; break;
-
-            case PlayerAnim::Jump:
-                // --- SPEZIAL LOGIK FÜR JUMP ---
-                if (currentFrame < 7) {
-                    row = 2;
-                    col = currentFrame;
-                } else {
-                    row = 3;
-                    col = currentFrame - 7;
-                }
-                break;
-
+            case PlayerAnim::Crouch:  row = 4; break;
+            case PlayerAnim::Jump:    if(currentFrame < 7) { row = 2; col = currentFrame; } else { row = 3; col = currentFrame - 7; } break;
             case PlayerAnim::Attack1: row = 6; break;
             case PlayerAnim::Attack2: row = 7; break;
-
-            case PlayerAnim::Attack3:
-                // --- SPEZIAL LOGIK FÜR ATTACK3 ---
-                if (currentFrame < 7) {
-                    row = 7;
-                    col = currentFrame;
-                } else {
-                    row = 8;
-                    col = currentFrame - 7;
-                }
-                break;
+            case PlayerAnim::Attack3: row = 8; break;
         }
 
-        SDL_FRect srcR = {
-            (float)(col * spriteW),
-            (float)(row * spriteH),
-            (float)spriteW,
-            (float)spriteH
-        };
-
-        FPoint screenPos;
-        screenPos.x = position.x + spriteOffset.x;
-        screenPos.y = position.y + spriteOffset.y - z;
-
-        JanSordid::SDL::FRect dstR = {
-            (screenPos.x * scale) + camera.x,
-            (screenPos.y * scale) + camera.y,
-            (float)spriteW * scale,
-            (float)spriteH * scale
+        SDL_FRect srcR = { (float)(col * spriteW), (float)(row * spriteH), (float)spriteW, (float)spriteH };
+        FRect dstR = {
+            ((position.x + spriteOffset.x) * scale) + camera.x,
+            ((position.y + spriteOffset.y - z) * scale) + camera.y,
+            (float)spriteW * scale, (float)spriteH * scale
         };
 
         SDL_FlipMode flip = facingRight ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL;

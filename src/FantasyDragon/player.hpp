@@ -6,15 +6,16 @@
 #include <memory>
 #include <cstdint>
 
-// --- FIX: WIR HOLEN DIE ECHTE DEFINITION (160) ---
 #include "hsnr64/tiles.hpp"
 
 namespace JanSordid::SDL_Example
 {
-    // --- FIX: KEINE HARTE ZAHL MEHR ---
-    // Wir sagen: "MapType ist das, was in tiles.hpp steht (JanSordid::HSNR64::MapType)"
-    // Damit ist es automatisch 160 breit!
-    using MapType = JanSordid::HSNR64::MapType;
+    constexpr int MAP_WIDTH = 480;
+    constexpr int MAP_HEIGHT = 20;
+    using MapType = std::array<std::array<int, MAP_WIDTH>, MAP_HEIGHT>;
+
+    // Wir definieren WorldState hier, damit der Player die 3 Layer kennt
+    using WorldState = std::array<MapType, 3>;
 
     using u8  = std::uint8_t;
     using f32 = float;
@@ -43,10 +44,8 @@ namespace JanSordid::SDL_Example
         float z = 0.0f;
         float velZ = 0.0f;
 
-        // --- KAMPF STATS ---
         int hp = 100;
-        float hitTimer = 0.0f; // Für Unverwundbarkeit
-        // -------------------
+        float hitTimer = 0.0f;
 
         FPoint size = { 16.0f, 16.0f };
         FPoint spriteOffset = { -17.0f, -28.0f };
@@ -61,21 +60,17 @@ namespace JanSordid::SDL_Example
         Owned<Texture> spriteSheet;
         Owned<Texture> shadowTexture;
 
-        // Haupt-Funktionen
         void Init(SDL_Renderer* renderer);
-
-        // Update nutzt jetzt automatisch die große Map (160)
-        void Update(float dt, const MapType& map);
-
+        // Geändert: Nimmt jetzt WorldState (alle Layer)
+        void Update(float dt, const WorldState& world);
         void Input(const Event& evt);
         void Render(SDL_Renderer* renderer, FPoint camera, int scale);
 
-        // --- KAMPF FUNKTIONEN ---
         void TakeDamage(int amount);
         FRect GetAttackHitbox() const;
-        // ------------------------
 
     private:
+        // Geändert: Prüft Kollision gegen eine spezifische Map (den Collision Layer)
         bool CheckCollision(const FRect& rect, const MapType& map);
     };
 }
