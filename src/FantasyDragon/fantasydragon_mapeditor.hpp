@@ -102,10 +102,18 @@ namespace JanSordid::SDL_Example
         struct FireballProjectile
         {
             FPoint pos{};
+            FPoint startPos{};
             FPoint vel{};
             float  z = 0.0f;
             float  radius = 10.0f;
             float  lifetime = 1.2f;
+            float  animTime = 0.0f;
+            bool   alive = true;
+        };
+        struct ExplosionAnim
+        {
+            FPoint pos{};
+            float  animTime = 0.0f;
             bool   alive = true;
         };
 
@@ -124,6 +132,7 @@ namespace JanSordid::SDL_Example
         Owned<Texture> _tileSet;
 
         Owned<Texture> _texFireball;
+        Owned<Texture> _texExplosion;
 
         const bool _doGenerateEmptyMap = true;
         WorldState _worldState1;
@@ -145,6 +154,7 @@ namespace JanSordid::SDL_Example
         int _manaDummy = 100;
 
         std::vector<FireballProjectile> _fireballs;
+        std::vector<ExplosionAnim> _explosions;
         FD::Magic::MagicResult _debugTemplate = FD::Magic::MagicResult::Fireball;
 
         Point  _pickedIdx          = Point{ 0, 0 };

@@ -131,11 +131,21 @@ namespace JanSordid::SDL_Example
             const float dir = player.facingRight ? 1.0f : -1.0f;
             p.pos = player.position;
             p.pos.x += dir * 20.0f;
+            p.startPos = p.pos;
             p.vel = { dir * 420.0f, 0.0f };
             p.radius = 10.0f;
             p.lifetime = 1.2f;
+            p.animTime = 0.0f;
             p.alive = true;
             list.push_back(p);
+        }
+
+        static void SpawnExplosion(std::vector<EditorState::ExplosionAnim>& list, const FPoint& pos) {
+            EditorState::ExplosionAnim e;
+            e.pos = pos;
+            e.animTime = 0.0f;
+            e.alive = true;
+            list.push_back(e);
         }
 
         void ApplyMagicResult(FD::Magic::MagicResult res,
@@ -186,13 +196,23 @@ namespace JanSordid::SDL_Example
        }
 
        if (!_texFireball) {
-           std::string fbPath = GetAssetPath(BasePathGraphic "fire.png");
+           std::string fbPath = GetAssetPath("magic/Fire/Fire I/Fire_I_16x16.png");
            auto* surf = IMG_Load(fbPath.c_str());
            if (surf) {
                _texFireball.reset(SDL_CreateTextureFromSurface(renderer(), surf));
                SDL_Log("Feuerball Textur geladen!");
            } else {
                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Feuerball Textur fehlt: %s", fbPath.c_str());
+           }
+       }
+       if (!_texExplosion) {
+           std::string exPath = GetAssetPath("magic/Fire/Bomb/Fire_Bomb_Explosion_96x48.png");
+           auto* surf = IMG_Load(exPath.c_str());
+           if (surf) {
+               _texExplosion.reset(SDL_CreateTextureFromSurface(renderer(), surf));
+               SDL_Log("Explosion Textur geladen!");
+           } else {
+               SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Explosion Textur fehlt: %s", exPath.c_str());
            }
        }
 
@@ -392,19 +412,39 @@ namespace JanSordid::SDL_Example
                     if (!f.alive) continue;
                     f.lifetime -= deltaT;
                     if (f.lifetime <= 0.0f) { f.alive = false; continue; }
+                    f.animTime += deltaT;
                     f.pos.x += f.vel.x * deltaT;
                     f.pos.y += f.vel.y * deltaT;
+                    constexpr float kFireMaxRangeWorld = 240.0f;
+                    const float maxRange = kFireMaxRangeWorld;
+                    const float dx = f.pos.x - f.startPos.x;
+                    const float dy = f.pos.y - f.startPos.y;
+                    if (std::sqrt((dx * dx) + (dy * dy)) >= maxRange) { f.alive = false; continue; }
 
                     const FRect fbBox  = CircleToRect(f.pos, f.radius);
                     for (auto& bee : _bees) {
                         if (bee.state == BeeState::Dead) continue;
                         const FRect beeBox = bee.GetHitbox();
                         if (SDL_HasRectIntersectionFloat(&fbBox, &beeBox)) {
-                            bee.TakeDamage(20); f.alive = false; break;
+                            bee.TakeDamage(20);
+                            SpawnExplosion(_explosions, f.pos);
+                            f.alive = false;
+                            break;
                         }
                     }
                 }
                 _fireballs.erase(std::remove_if(_fireballs.begin(), _fireballs.end(), [](const auto& f) { return !f.alive; }), _fireballs.end());
+
+                for (auto& e : _explosions) {
+                    if (!e.alive) continue;
+                    e.animTime += deltaT;
+                    constexpr int kExplosionFrames = 13;
+                    constexpr float kExplosionFrameTime = 0.04f;
+                    if (e.animTime >= kExplosionFrames * kExplosionFrameTime) {
+                        e.alive = false;
+                    }
+                }
+                _explosions.erase(std::remove_if(_explosions.begin(), _explosions.end(), [](const auto& e) { return !e.alive; }), _explosions.end());
 
                 if (_player.isAttacking && _player.currentFrame >= 2 && _player.currentFrame <= 4) {
                     FRect swordBox = _player.GetAttackHitbox();
@@ -513,17 +553,50 @@ namespace JanSordid::SDL_Example
        if (!GlobalSettings::isEditorMode) {
            for (const auto& f : _fireballs) {
                if (!f.alive) continue;
-               float r = f.radius * (float)_mapScale;
-               float size = r * 2.0f;
-               JanSordid::SDL::FRect dst = { (f.pos.x * (float)_mapScale) + _camera.x - r, (f.pos.y * (float)_mapScale) + _camera.y - r, size, size };
+               constexpr int kFireFrameW = 16;
+               constexpr int kFireFrameH = 16;
+               constexpr int kFireFrames = 15;
+               constexpr float kFireMaxRangeWorld = 200.0f;
+               const float dx = f.pos.x - f.startPos.x;
+               const float dy = f.pos.y - f.startPos.y;
+               const float dist = std::sqrt((dx * dx) + (dy * dy));
+               const float t = std::min(dist / kFireMaxRangeWorld, 1.0f);
+               const int frame = std::min((int)(t * (float)kFireFrames), kFireFrames - 1);
+               JanSordid::SDL::FRect src = { (float)(frame * kFireFrameW), 0.0f, (float)kFireFrameW, (float)kFireFrameH };
+               const float size = (float)kFireFrameW * (float)_mapScale;
+               JanSordid::SDL::FRect dst = { (f.pos.x * (float)_mapScale) + _camera.x - (size * 0.5f),
+                                             (f.pos.y * (float)_mapScale) + _camera.y - (size * 0.5f),
+                                             size, size };
                if (_texFireball) {
                    double angle = std::atan2(f.vel.y, f.vel.x) * (180.0 / M_PI);
-                   SDL_RenderTextureRotated(renderer(), _texFireball.get(), nullptr, &dst, angle, nullptr, SDL_FLIP_NONE);
+                   SDL_RenderTextureRotated(renderer(), _texFireball.get(), &src, &dst, angle, nullptr, SDL_FLIP_NONE);
                } else {
                    SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_BLEND);
                    SDL_SetRenderDrawColor(renderer(), 255, 60, 40, 220);
                    SDL_RenderFillRect(renderer(), &dst);
                    SDL_SetRenderDrawBlendMode(renderer(), SDL_BLENDMODE_NONE);
+               }
+           }
+           for (const auto& e : _explosions) {
+               if (!e.alive) continue;
+               constexpr int kExplosionCols = 4;
+               constexpr int kExplosionRows = 4;
+               constexpr int kExplosionFrames = 13;
+               constexpr int kExplosionFrameW = 96;
+               constexpr int kExplosionFrameH = 48;
+               constexpr float kExplosionFrameTime = 0.04f;
+               const int frame = std::min((int)(e.animTime / kExplosionFrameTime), kExplosionFrames - 1);
+               const int col = frame % kExplosionCols;
+               const int row = frame / kExplosionCols;
+               JanSordid::SDL::FRect src = { (float)(col * kExplosionFrameW), (float)(row * kExplosionFrameH),
+                                             (float)kExplosionFrameW, (float)kExplosionFrameH };
+               const float sizeW = (float)kExplosionFrameW * (float)_mapScale;
+               const float sizeH = (float)kExplosionFrameH * (float)_mapScale;
+               JanSordid::SDL::FRect dst = { (e.pos.x * (float)_mapScale) + _camera.x - (sizeW * 0.5f),
+                                             (e.pos.y * (float)_mapScale) + _camera.y - (sizeH * 0.5f),
+                                             sizeW, sizeH };
+               if (_texExplosion) {
+                   SDL_RenderTexture(renderer(), _texExplosion.get(), &src, &dst);
                }
            }
            int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);

@@ -1,2 +1,5 @@
 /build/
 /.idea/
+cmake.xml
+editor.xml
+sdl_base.iml
