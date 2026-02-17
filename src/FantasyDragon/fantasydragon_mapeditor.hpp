@@ -116,6 +116,12 @@ namespace JanSordid::SDL_Example
             float  animTime = 0.0f;
             bool   alive = true;
         };
+        struct HealAnim
+        {
+            FPoint pos{};
+            float  animTime = 0.0f;
+            bool   alive = true;
+        };
 
         using Base::Base;
         void Init() override;
@@ -133,6 +139,7 @@ namespace JanSordid::SDL_Example
 
         Owned<Texture> _texFireball;
         Owned<Texture> _texExplosion;
+        Owned<Texture> _texHeal;
 
         const bool _doGenerateEmptyMap = true;
         WorldState _worldState1;
@@ -155,6 +162,7 @@ namespace JanSordid::SDL_Example
 
         std::vector<FireballProjectile> _fireballs;
         std::vector<ExplosionAnim> _explosions;
+        std::vector<HealAnim> _heals;
         FD::Magic::MagicResult _debugTemplate = FD::Magic::MagicResult::Fireball;
 
         Point  _pickedIdx          = Point{ 0, 0 };
