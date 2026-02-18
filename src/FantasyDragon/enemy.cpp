@@ -42,7 +42,8 @@ namespace JanSordid::SDL_Example
 
     void Bee::Init(SDL_Renderer* renderer, float startX, float startY) {
         position = { startX, startY };
-        hp = 30; // 3 Leben (1 Schlag = 10 Schaden)
+        maxHp = 30;
+        hp = maxHp; // 3 Leben (1 Schlag = 10 Schaden)
 
         // --- ÄNDERUNG: Startet friedlich ---
         state = BeeState::Idle;

@@ -44,7 +44,10 @@ namespace JanSordid::SDL_Example
         float z = 0.0f;
         float velZ = 0.0f;
 
+        int maxHp = 100;
         int hp = 100;
+        int maxMana = 100;
+        int mana = 100;
         float hitTimer = 0.0f;
 
         FPoint size = { 16.0f, 16.0f };
@@ -58,7 +61,11 @@ namespace JanSordid::SDL_Example
         int currentFrame = 0;
 
         Owned<Texture> spriteSheet;
+        Owned<Texture> deathSheet;
         Owned<Texture> shadowTexture;
+        bool isDead = false;
+        float deathTimer = 0.0f;
+        int deathFrameIndex = 0;
 
         void Init(SDL_Renderer* renderer);
         // Geändert: Nimmt jetzt WorldState (alle Layer)
@@ -68,9 +75,11 @@ namespace JanSordid::SDL_Example
 
         void TakeDamage(int amount);
         FRect GetAttackHitbox() const;
+        bool IsDeathAnimFinished() const;
 
     private:
         // Geändert: Prüft Kollision gegen eine spezifische Map (den Collision Layer)
         bool CheckCollision(const FRect& rect, const MapType& map);
+        void StartDeath();
     };
 }

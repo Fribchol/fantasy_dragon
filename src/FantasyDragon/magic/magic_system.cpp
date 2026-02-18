@@ -238,6 +238,9 @@ namespace JanSordid::FantasyDragon::Magic
     void MagicSystem::BeginCast(int& mana)
     {
         if (active) return;
+        constexpr int kManaCost = 10;
+        if (mana < kManaCost) return;
+        mana -= kManaCost;
         active = true;
         timer  = 3.0f;
         result = MagicResult::None;
