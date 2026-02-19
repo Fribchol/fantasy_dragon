@@ -30,6 +30,7 @@ namespace JanSordid::SDL_Example
 
         FPoint size = { 24.0f, 24.0f };
 
+        int maxHp = 30;
         int hp = 30;
         bool facingRight = false;
 

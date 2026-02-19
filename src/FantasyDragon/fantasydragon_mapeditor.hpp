@@ -140,12 +140,18 @@ namespace JanSordid::SDL_Example
         Owned<Texture> _texFireball;
         Owned<Texture> _texExplosion;
         Owned<Texture> _texHeal;
+        Owned<Texture> _uiFrame;
+        Owned<Texture> _uiHpFill;
+        Owned<Texture> _uiManaFill;
+        Owned<Texture> _enemyHpFrame;
+        Owned<Texture> _enemyHpFill;
 
         const bool _doGenerateEmptyMap = true;
         WorldState _worldState1;
         WorldState _worldState2;
         WorldState* _currState = &_worldState1;
         WorldState* _nextState = &_worldState2;
+        std::string _currentGameMapPath;
 
         int _activeLayer = 0;
 
@@ -158,7 +164,6 @@ namespace JanSordid::SDL_Example
         std::vector<Bee> _bees;
 
         FD::Magic::MagicSystem _magic;
-        int _manaDummy = 100;
 
         std::vector<FireballProjectile> _fireballs;
         std::vector<ExplosionAnim> _explosions;
@@ -184,6 +189,9 @@ namespace JanSordid::SDL_Example
         FRect _chestHitbox;  // Wo steht die Kiste?
         bool _levelFinished = false;
         float _finishTimer = 0.0f;
+        float _manaRegenAccu = 0.0f;
+
+        void ResetLevel();
     };
 
     // =========================

@@ -2,6 +2,8 @@
 #include <SDL3_image/SDL_image.h>
 #include <iostream>
 #include <cmath>
+#include <utility>
+#include <algorithm>
 
 #ifndef BasePathGraphic
 #define BasePathGraphic "asset/graphic/"
@@ -31,6 +33,7 @@ namespace JanSordid::SDL_Example
 
     void Player::Init(SDL_Renderer* renderer) {
         const char* filename = "asset/graphic/adventurer-v1.5-Sheet.png";
+        const char* deathFilename = "asset/graphic/adventurer.png";
 
         auto* surfRaw = IMG_Load(filename);
         if(!surfRaw) {
@@ -41,19 +44,37 @@ namespace JanSordid::SDL_Example
              SDL_DestroySurface(surfRaw);
         }
 
+        auto* deathSurf = IMG_Load(deathFilename);
+        if(!deathSurf) {
+             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Spieler Death Sprite fehlt: %s", deathFilename);
+        } else {
+             SDL_Log("Spieler Death Sprite geladen: %s", deathFilename);
+             deathSheet.reset(SDL_CreateTextureFromSurface(renderer, deathSurf));
+             SDL_DestroySurface(deathSurf);
+        }
+
         shadowTexture.reset(CreateShadowTexture(renderer));
 
         position = { 100.0f, 150.0f };
         velocity = { 0.0f, 0.0f };
         z = 0.0f;
         velZ = 0.0f;
-        hp = 100;
+        maxHp = 100;
+        hp = maxHp;
+        maxMana = 100;
+        mana = maxMana;
         hitTimer = 0.0f;
+        isDead = false;
+        deathTimer = 0.0f;
+        deathFrameIndex = 0;
     }
 
     void Player::TakeDamage(int amount) {
+        if (isDead) return;
         if (hitTimer > 0.0f) return;
         hp -= amount;
+        if (hp < 0) hp = 0;
+        if (hp == 0) StartDeath();
         hitTimer = 0.5f;
         velZ = 100.0f; // Kleiner Hüpfer bei Schaden
     }
@@ -66,6 +87,7 @@ namespace JanSordid::SDL_Example
     }
 
     void Player::Input(const Event& evt) {
+        if (isDead) return;
         if (isAttacking) return;
         const float JUMP_FORCE = 400.0f;
 
@@ -112,6 +134,16 @@ namespace JanSordid::SDL_Example
 
     void Player::Update(float dt, const WorldState& world) {
         if (hitTimer > 0.0f) hitTimer -= dt;
+        if (hp <= 0 && !isDead) StartDeath();
+        if (isDead) {
+            deathTimer += dt;
+            constexpr float kDeathFrameTime = 0.12f;
+            if (deathTimer >= kDeathFrameTime) {
+                deathTimer = 0.0f;
+                if (deathFrameIndex < 7) deathFrameIndex++;
+            }
+            return;
+        }
 
         // Wir nutzen Layer 1 (Main) für die Größen-Referenz und Kollision
         const auto& collisionMap = world[1];
@@ -187,7 +219,7 @@ namespace JanSordid::SDL_Example
         }
     }
 
-    void Player::Render(SDL_Renderer* renderer, FPoint camera, int scale) {
+    void Player::Render(SDL_Renderer* renderer, FPoint camera, int scale, bool healTint) {
         if (!spriteSheet) return;
         if (hitTimer > 0.0f && (int)(hitTimer * 15) % 2 == 0) return;
 
@@ -199,6 +231,29 @@ namespace JanSordid::SDL_Example
                 shadowW, shadowH
             };
             SDL_RenderTexture(renderer, shadowTexture.get(), nullptr, &shadowRect);
+        }
+
+        if (isDead && deathSheet) {
+            const float frameW = 50.0f;
+            const float frameH = 37.0f;
+
+            static const std::array<std::pair<int,int>, 8> kDeathFrames = {{
+                {4,4}, {4,5}, {4,6}, {5,0}, {5,1}, {5,2}, {5,3}, {5,4}
+            }};
+            const int idx = std::min(deathFrameIndex, (int)kDeathFrames.size() - 1);
+            const int r = kDeathFrames[idx].first;
+            const int c = kDeathFrames[idx].second;
+
+            SDL_FRect srcR = { c * frameW, r * frameH, frameW, frameH };
+            FRect dstR = {
+                ((position.x + spriteOffset.x) * scale) + camera.x,
+                ((position.y + spriteOffset.y - z) * scale) + camera.y,
+                frameW * scale, frameH * scale
+            };
+
+            SDL_FlipMode flip = facingRight ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL;
+            SDL_RenderTextureRotated(renderer, deathSheet.get(), &srcR, &dstR, 0.0, nullptr, flip);
+            return;
         }
 
         int spriteW = 50; int spriteH = 37;
@@ -222,6 +277,22 @@ namespace JanSordid::SDL_Example
         };
 
         SDL_FlipMode flip = facingRight ? SDL_FLIP_NONE : SDL_FLIP_HORIZONTAL;
+        if (healTint) SDL_SetTextureColorMod(spriteSheet.get(), 255, 240, 90);
         SDL_RenderTextureRotated(renderer, spriteSheet.get(), &srcR, &dstR, 0.0, nullptr, flip);
+        if (healTint) SDL_SetTextureColorMod(spriteSheet.get(), 255, 255, 255);
+    }
+
+    void Player::StartDeath() {
+        if (isDead) return;
+        isDead = true;
+        deathTimer = 0.0f;
+        deathFrameIndex = 0;
+        isAttacking = false;
+        velocity = { 0.0f, 0.0f };
+    }
+
+    bool Player::IsDeathAnimFinished() const {
+        return isDead && deathFrameIndex >= 7;
     }
 }
+

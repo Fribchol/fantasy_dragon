@@ -122,6 +122,53 @@ namespace JanSordid::SDL_Example
             return GetAssetPath("magic_templates");
         }
 
+        static bool BuildChestHitboxFromMap(const EditorState::WorldState& layers,
+                                            int layerIndex,
+                                            const Point& tileCount,
+                                            FRect& outHitbox)
+        {
+            if (tileCount.x <= 0 || tileCount.y <= 0) return false;
+            if (layerIndex < 0 || layerIndex >= (int)layers.size()) return false;
+
+            const int tilesetCols = tileCount.x;
+            const int chestX0 = 18;
+            const int chestY0 = 19;
+            const int chestX1 = 19;
+            const int chestY1 = 20;
+
+            const int chestId00 = chestX0 + chestY0 * tilesetCols;
+            const int chestId01 = chestX0 + chestY1 * tilesetCols;
+            const int chestId10 = chestX1 + chestY0 * tilesetCols;
+            const int chestId11 = chestX1 + chestY1 * tilesetCols;
+
+            const auto& map = layers[layerIndex];
+            bool found = false;
+            int minX = 999999, minY = 999999;
+            int maxX = -1, maxY = -1;
+
+            for (int y = 0; y < (int)map.size(); ++y) {
+                for (int x = 0; x < (int)map[y].size(); ++x) {
+                    const int id = map[y][x];
+                    if (id == chestId00 || id == chestId01 || id == chestId10 || id == chestId11) {
+                        found = true;
+                        if (x < minX) minX = x;
+                        if (y < minY) minY = y;
+                        if (x > maxX) maxX = x;
+                        if (y > maxY) maxY = y;
+                    }
+                }
+            }
+
+            if (!found) return false;
+
+            const float tileSize = 16.0f;
+            outHitbox.x = minX * tileSize;
+            outHitbox.y = minY * tileSize;
+            outHitbox.w = (maxX - minX + 1) * tileSize;
+            outHitbox.h = (maxY - minY + 1) * tileSize;
+            return true;
+        }
+
         static JanSordid::SDL::FRect CircleToRect(const JanSordid::SDL::FPoint& center, float radius) {
             return JanSordid::SDL::FRect{ center.x - radius, center.y - radius, radius * 2.0f, radius * 2.0f };
         }
@@ -169,7 +216,7 @@ namespace JanSordid::SDL_Example
                     break;
                 case FD::Magic::MagicResult::Heal:
                     SDL_Log(">>> CAST: HEAL <<<");
-                    player.hp = std::min(player.hp + 25, 100);
+                    player.hp = std::min(player.hp + 25, player.maxHp);
                     SpawnHeal(heals, FPoint{player.position.x + (player.size.x * 0.5f),
                                             player.position.y - player.size.y});
                     break;
@@ -237,6 +284,63 @@ namespace JanSordid::SDL_Example
            }
        }
 
+       if (!_uiFrame) {
+           std::string uiFramePath = GetAssetPath("gui/uf2_frame.png");
+           auto* surf = IMG_Load(uiFramePath.c_str());
+           if (surf) {
+               _uiFrame.reset(SDL_CreateTextureFromSurface(renderer(), surf));
+               SDL_SetTextureBlendMode(_uiFrame.get(), SDL_BLENDMODE_BLEND);
+               SDL_Log("UI Frame geladen!");
+           } else {
+               SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "UI Frame fehlt: %s", uiFramePath.c_str());
+           }
+       }
+       if (!_uiHpFill) {
+           std::string uiHpPath = GetAssetPath("gui/uf2_fill_green.png");
+           auto* surf = IMG_Load(uiHpPath.c_str());
+           if (surf) {
+               _uiHpFill.reset(SDL_CreateTextureFromSurface(renderer(), surf));
+               SDL_SetTextureBlendMode(_uiHpFill.get(), SDL_BLENDMODE_BLEND);
+               SDL_Log("UI HP Fill geladen!");
+           } else {
+               SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "UI HP Fill fehlt: %s", uiHpPath.c_str());
+           }
+       }
+       if (!_uiManaFill) {
+           std::string uiManaPath = GetAssetPath("gui/uf2_fill_blue.png");
+           auto* surf = IMG_Load(uiManaPath.c_str());
+           if (surf) {
+               _uiManaFill.reset(SDL_CreateTextureFromSurface(renderer(), surf));
+               SDL_SetTextureBlendMode(_uiManaFill.get(), SDL_BLENDMODE_BLEND);
+               SDL_Log("UI Mana Fill geladen!");
+           } else {
+               SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "UI Mana Fill fehlt: %s", uiManaPath.c_str());
+           }
+       }
+
+       if (!_enemyHpFrame) {
+           std::string enemyFramePath = GetAssetPath("gui/uf3_frame.png");
+           auto* surf = IMG_Load(enemyFramePath.c_str());
+           if (surf) {
+               _enemyHpFrame.reset(SDL_CreateTextureFromSurface(renderer(), surf));
+               SDL_SetTextureBlendMode(_enemyHpFrame.get(), SDL_BLENDMODE_BLEND);
+               SDL_Log("Enemy HP Frame geladen!");
+           } else {
+               SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Enemy HP Frame fehlt: %s", enemyFramePath.c_str());
+           }
+       }
+       if (!_enemyHpFill) {
+           std::string enemyFillPath = GetAssetPath("gui/uf3_fill_red.png");
+           auto* surf = IMG_Load(enemyFillPath.c_str());
+           if (surf) {
+               _enemyHpFill.reset(SDL_CreateTextureFromSurface(renderer(), surf));
+               SDL_SetTextureBlendMode(_enemyHpFill.get(), SDL_BLENDMODE_BLEND);
+               SDL_Log("Enemy HP Fill geladen!");
+           } else {
+               SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Enemy HP Fill fehlt: %s", enemyFillPath.c_str());
+           }
+       }
+
        if( _doGenerateEmptyMap ) {
           const int FillTile = 0;
           for(int l = 0; l < 3; ++l) {
@@ -293,13 +397,17 @@ namespace JanSordid::SDL_Example
        float mapPixelH = (float)( (*_currState)[0].size() * 16 * _mapScale );
        _camera.x = 50.0f;
        _camera.y = (winH / 2.0f) - (mapPixelH / 2.0f);
-       _paletteScale = 1;
+       _paletteScale = 2;
 
        if (GlobalSettings::isEditorMode) {
            _showPalette = true; _showGrid = true;
        } else {
            _showPalette = false; _showGrid = false;
-           if (!g_PendingGameMap.empty()) { LoadMapFromFile(g_PendingGameMap, *_currState); g_PendingGameMap = ""; }
+           if (!g_PendingGameMap.empty()) {
+               LoadMapFromFile(g_PendingGameMap, *_currState);
+               _currentGameMapPath = g_PendingGameMap;
+               g_PendingGameMap = "";
+           }
        }
        _pickedSize = { 1, 1 }; _pickedIdx = { 0, 0 }; _isSelectingPalette = false;
        _activeLayer = 0;
@@ -308,9 +416,54 @@ namespace JanSordid::SDL_Example
        // Ich setze die Kiste auf X=6700 (Hinter der letzten Gegnergruppe)
        // und Y=240 (ungefähr Bodenhöhe).
        // Du kannst diese Zahlen ändern, wenn du die Kiste im Editor woanders gemalt hast.
-       _chestHitbox = { 6700.0f, 240.0f, 32.0f, 32.0f };
+       _chestHitbox = { 0.0f, 0.0f, 0.0f, 0.0f };
+       const bool chestFound = BuildChestHitboxFromMap(*_currState, 1, _tileCount, _chestHitbox);
+       if (!chestFound) SDL_Log("Kiste nicht gefunden: Tiles (18,19)-(19,20) fehlen im Layer 1.");
        _levelFinished = false;
        _finishTimer = 0.0f;
+       _manaRegenAccu = 0.0f;
+    }
+
+    void EditorState::ResetLevel()
+    {
+        if (GlobalSettings::isEditorMode) return;
+
+        _player.Init(renderer());
+        _bees.clear();
+
+        auto SpawnBee = [&](float x, float y) {
+            Bee b;
+            b.Init(renderer(), x, y);
+            _bees.push_back(std::move(b));
+        };
+
+        SpawnBee(1200.0f, 220.0f);
+        SpawnBee(3000.0f, 150.0f);
+        SpawnBee(3080.0f, 250.0f);
+        SpawnBee(3150.0f, 180.0f);
+        SpawnBee(6200.0f, 120.0f);
+        SpawnBee(6280.0f, 280.0f);
+        SpawnBee(6350.0f, 200.0f);
+        SpawnBee(6420.0f, 150.0f);
+        SpawnBee(6500.0f, 250.0f);
+
+        _fireballs.clear();
+        _explosions.clear();
+        _heals.clear();
+        _magic.Cancel();
+
+        if (!_currentGameMapPath.empty()) {
+            LoadMapFromFile(_currentGameMapPath, *_currState);
+        }
+
+        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
+        float mapPixelH = (float)( (*_currState)[0].size() * 16 * _mapScale );
+        _camera.x = 50.0f;
+        _camera.y = (winH / 2.0f) - (mapPixelH / 2.0f);
+
+        _levelFinished = false;
+        _finishTimer = 0.0f;
+        _manaRegenAccu = 0.0f;
     }
 
     void EditorState::Destroy() {}
@@ -336,7 +489,7 @@ namespace JanSordid::SDL_Example
 
         if (!GlobalSettings::isEditorMode && !_levelFinished) { // Input nur wenn Level nicht fertig
             if (evt.type == SDL_EVENT_KEY_DOWN && evt.key.repeat == 0) {
-                if (evt.key.scancode == SDL_SCANCODE_E) _magic.BeginCast(_manaDummy);
+                if (evt.key.scancode == SDL_SCANCODE_E) _magic.BeginCast(_player.mana);
                 if (evt.key.scancode == SDL_SCANCODE_ESCAPE && _magic.IsActive()) _magic.Cancel();
                 if (evt.key.scancode == SDL_SCANCODE_1) _debugTemplate = FD::Magic::MagicResult::Fireball;
                 if (evt.key.scancode == SDL_SCANCODE_2) _debugTemplate = FD::Magic::MagicResult::Heal;
@@ -426,7 +579,23 @@ namespace JanSordid::SDL_Example
 
             if (_magic.IsActive()) { _magic.Update(deltaT); }
             else {
+                if (_player.mana < _player.maxMana) {
+                    _manaRegenAccu += deltaT;
+                    while (_manaRegenAccu >= 1.0f && _player.mana < _player.maxMana) {
+                        _player.mana += 1;
+                        _manaRegenAccu -= 1.0f;
+                    }
+                } else {
+                    _manaRegenAccu = 0.0f;
+                }
                 _player.Update(deltaT, *_currState);
+                if (_player.IsDeathAnimFinished()) {
+                    ResetLevel();
+                    return;
+                }
+                if (_player.hp <= 0) {
+                    return;
+                }
                 for (auto& bee : _bees) { bee.Update(deltaT, _player); }
 
                 for (auto& f : _fireballs) {
@@ -492,8 +661,12 @@ namespace JanSordid::SDL_Example
 
                     // 2. NEU: Kiste prüfen
                     if (SDL_HasRectIntersectionFloat(&swordBox, &_chestHitbox)) {
-                        SDL_Log(">>> KISTE GETROFFEN! LEVEL GESCHAFFT! <<<");
-                        _levelFinished = true;
+                        const bool allDead = std::all_of(_bees.begin(), _bees.end(),
+                                                         [](const Bee& b) { return b.state == BeeState::Dead; });
+                        if (allDead) {
+                            SDL_Log(">>> KISTE GETROFFEN! LEVEL GESCHAFFT! <<<");
+                            _levelFinished = true;
+                        }
                     }
                 }
                 int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
@@ -512,6 +685,7 @@ namespace JanSordid::SDL_Example
 
    void EditorState::Render( u64 frames, Duration, f32 deltaTNeeded ) {
        const auto& refLayer = (*_currState)[0];
+       const bool healActive = std::any_of(_heals.begin(), _heals.end(), [](const auto& h) { return h.alive; });
        FPoint mapTS = toF( _tileSize * _mapScale );
        SDL_SetRenderDrawColor( renderer(), 30, 30, 30, 255 );
        FRect mapBG = toFRect( _camera, FPoint{(f32)refLayer[0].size(), (f32)refLayer.size()} * mapTS );
@@ -554,7 +728,7 @@ namespace JanSordid::SDL_Example
               int playerTileRow = (int)(playerFootY / 16.0f);
 
               if (playerTileRow == (int)y) {
-                  _player.Render(renderer(), _camera, _mapScale);
+                  _player.Render(renderer(), _camera, _mapScale, healActive);
               }
 
               for (auto& bee : _bees) {
@@ -583,6 +757,37 @@ namespace JanSordid::SDL_Example
 
        // 4. Overlays & UI
        if (!GlobalSettings::isEditorMode) {
+           if (_enemyHpFrame && _enemyHpFill) {
+               float frameW = 0.0f, frameH = 0.0f;
+               float fillW = 0.0f, fillH = 0.0f;
+               SDL_GetTextureSize(_enemyHpFrame.get(), &frameW, &frameH);
+               SDL_GetTextureSize(_enemyHpFill.get(), &fillW, &fillH);
+
+               const float uiScale = 0.6f;
+               const float scaledFrameW = frameW * uiScale;
+               const float scaledFrameH = frameH * uiScale;
+               const float scaledFillW = fillW * uiScale;
+               const float scaledFillH = fillH * uiScale;
+
+               for (const auto& bee : _bees) {
+                   if (bee.state == BeeState::Dead) continue;
+
+                   const float hpRatio = (bee.maxHp > 0) ? std::clamp((float)bee.hp / (float)bee.maxHp, 0.0f, 1.0f) : 0.0f;
+                   const float centerX = (bee.position.x + (bee.size.x * 0.5f)) * _mapScale + _camera.x;
+                   const float topY = (bee.position.y * _mapScale) + _camera.y - (bee.z * _mapScale) - 18.0f;
+
+                   FRect frameDst = { centerX - (scaledFrameW * 0.5f), topY - scaledFrameH, scaledFrameW, scaledFrameH };
+                   const float fillX = frameDst.x + (scaledFrameW - scaledFillW) * 0.5f;
+                   const float fillY = frameDst.y + (scaledFrameH - scaledFillH) * 0.5f;
+
+                   SDL_FRect fillSrc = { 0.0f, 0.0f, fillW * hpRatio, fillH };
+                   SDL_FRect fillDst = { fillX, fillY, scaledFillW * hpRatio, scaledFillH };
+
+                   SDL_RenderTexture(renderer(), _enemyHpFrame.get(), nullptr, &frameDst);
+                   SDL_RenderTexture(renderer(), _enemyHpFill.get(), &fillSrc, &fillDst);
+               }
+           }
+
            for (const auto& f : _fireballs) {
                if (!f.alive) continue;
                constexpr int kFireFrameW = 16;
@@ -655,6 +860,45 @@ namespace JanSordid::SDL_Example
            }
            int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
            FD::Magic::MagicDebugRender::RenderOverlay(renderer(), _magic, winW, winH, _debugTemplate);
+
+           if (_uiFrame && _uiHpFill && _uiManaFill) {
+               const int margin = 16;
+               const float uiScale = 2.0f;
+               float frameW = 0.0f, frameH = 0.0f;
+               SDL_GetTextureSize(_uiFrame.get(), &frameW, &frameH);
+
+               const float scaledFrameW = frameW * uiScale;
+               const float scaledFrameH = frameH * uiScale;
+               FRect frameDst = { (float)margin, (float)(winH - margin - scaledFrameH), scaledFrameW, scaledFrameH };
+
+               float hpW = 0.0f, hpH = 0.0f;
+               float manaW = 0.0f, manaH = 0.0f;
+               SDL_GetTextureSize(_uiHpFill.get(), &hpW, &hpH);
+               SDL_GetTextureSize(_uiManaFill.get(), &manaW, &manaH);
+
+               const float scaledHpW = hpW * uiScale;
+               const float scaledHpH = hpH * uiScale;
+               const float scaledManaW = manaW * uiScale;
+               const float scaledManaH = manaH * uiScale;
+
+               const float hpRatio = (_player.maxHp > 0) ? std::clamp((float)_player.hp / (float)_player.maxHp, 0.0f, 1.0f) : 0.0f;
+               const float manaRatio = (_player.maxMana > 0) ? std::clamp((float)_player.mana / (float)_player.maxMana, 0.0f, 1.0f) : 0.0f;
+
+               const float hpX = frameDst.x + (frameDst.w - scaledHpW) * 0.5f + (30.0f * uiScale);
+               const float manaX = frameDst.x + (frameDst.w - scaledManaW) * 0.5f + (25.0f * uiScale);
+               const float hpY = frameDst.y + (30.0f * uiScale);
+               const float manaY = frameDst.y + (50.0f * uiScale);
+
+               SDL_FRect hpSrc = { 0.0f, 0.0f, hpW * hpRatio, hpH };
+               SDL_FRect hpDst = { hpX, hpY, scaledHpW * hpRatio, scaledHpH };
+
+               SDL_FRect manaSrc = { 0.0f, 0.0f, manaW * manaRatio, manaH };
+               SDL_FRect manaDst = { manaX, manaY, scaledManaW * manaRatio, scaledManaH };
+
+               SDL_RenderTexture(renderer(), _uiFrame.get(), nullptr, &frameDst);
+               SDL_RenderTexture(renderer(), _uiHpFill.get(), &hpSrc, &hpDst);
+               SDL_RenderTexture(renderer(), _uiManaFill.get(), &manaSrc, &manaDst);
+           }
 
            // --- NEU: ANZEIGE LEVEL GESCHAFFT ---
            if (_levelFinished && _font) {
