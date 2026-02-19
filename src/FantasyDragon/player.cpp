@@ -234,12 +234,8 @@ namespace JanSordid::SDL_Example
         }
 
         if (isDead && deathSheet) {
-            float deathW = 0.0f, deathH = 0.0f;
-            SDL_GetTextureSize(deathSheet.get(), &deathW, &deathH);
-            const int cols = 7;
-            const int rows = 10;
-            const float frameW = deathW / (float)cols;
-            const float frameH = deathH / (float)rows;
+            const float frameW = 50.0f;
+            const float frameH = 37.0f;
 
             static const std::array<std::pair<int,int>, 8> kDeathFrames = {{
                 {4,4}, {4,5}, {4,6}, {5,0}, {5,1}, {5,2}, {5,3}, {5,4}
