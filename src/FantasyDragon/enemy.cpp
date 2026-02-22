@@ -40,6 +40,97 @@ namespace JanSordid::SDL_Example
         return t;
     }
 
+    namespace EnemyCommon
+    {
+        static FRect MakeHitbox(const FPoint& pos, const FPoint& size) {
+            return { pos.x, pos.y, size.x, size.y };
+        }
+
+        static void ResetAnim(int& frame, float& timer) {
+            frame = 0;
+            timer = 0.0f;
+        }
+
+        static bool AdvanceAnim(float dt, float frameTime, int frameCount, int& frame, float& timer, bool loop) {
+            timer += dt;
+            if (timer < frameTime) return false;
+            timer = 0.0f;
+            frame++;
+            if (frame < frameCount) return false;
+            if (loop) {
+                frame = 0;
+            } else {
+                frame = frameCount - 1;
+            }
+            return true;
+        }
+
+        static void RenderShadowAirborne(SDL_Renderer* r,
+                                         SDL_Texture* shadow,
+                                         const FPoint& pos,
+                                         const FPoint& size,
+                                         float z,
+                                         FPoint cam,
+                                         int scale,
+                                         float shadowW = 20.0f,
+                                         float shadowH = 10.0f,
+                                         float manualOffsetX = 15.0f,
+                                         float manualOffsetY = 5.0f)
+        {
+            if (!shadow) return;
+            float w = shadowW * scale;
+            float h = shadowH * scale;
+            float centerX = ((size.x * scale - w) / 2.0f) + (manualOffsetX * scale);
+
+            FRect sRect = {
+                (pos.x * scale) + cam.x + centerX,
+                (pos.y * scale) + cam.y + (size.y * scale) - (h / 2.0f) + (manualOffsetY * scale),
+                w,
+                h
+            };
+
+            float scaleFactor = 1.0f - (z / 200.0f);
+            if (scaleFactor < 0.5f) scaleFactor = 0.5f;
+
+            sRect.w *= scaleFactor;
+            sRect.h *= scaleFactor;
+            sRect.x += (w - sRect.w) / 2.0f;
+            sRect.y += (h - sRect.h) / 2.0f;
+
+            SDL_RenderTexture(r, shadow, nullptr, &sRect);
+        }
+
+        static void RenderShadowGrounded(SDL_Renderer* r,
+                                         SDL_Texture* shadow,
+                                         const FPoint& footPos,
+                                         float z,
+                                         FPoint cam,
+                                         int scale,
+                                         float shadowW = 22.0f,
+                                         float shadowH = 8.0f)
+        {
+            if (!shadow) return;
+            float w = shadowW * scale;
+            float h = shadowH * scale;
+
+            FRect sRect = {
+                (footPos.x * scale) + cam.x - (w * 0.5f),
+                (footPos.y * scale) + cam.y - (h * 0.5f),
+                w,
+                h
+            };
+
+            float scaleFactor = 1.0f - (z / 200.0f);
+            if (scaleFactor < 0.7f) scaleFactor = 0.7f;
+            sRect.w *= scaleFactor;
+            sRect.h *= scaleFactor;
+            sRect.x += (w - sRect.w) * 0.5f;
+            sRect.y += (h - sRect.h) * 0.5f;
+
+            SDL_RenderTexture(r, shadow, nullptr, &sRect);
+        }
+    }
+
     void Bee::Init(SDL_Renderer* renderer, float startX, float startY) {
         position = { startX, startY };
         maxHp = 30;
@@ -64,13 +155,12 @@ namespace JanSordid::SDL_Example
             state = BeeState::Dead;
         } else {
             state = BeeState::Hit;
-            currentFrame = 0;
-            animTimer = 0;
+            EnemyCommon::ResetAnim(currentFrame, animTimer);
         }
     }
 
     FRect Bee::GetHitbox() const {
-        return { position.x, position.y, size.x, size.y };
+        return EnemyCommon::MakeHitbox(position, size);
     }
 
     FRect Bee::GetAttackBox() const {
@@ -147,24 +237,17 @@ namespace JanSordid::SDL_Example
         position.x += velocity.x * dt;
         position.y += velocity.y * dt;
 
-        animTimer += dt;
-        float frameTime = 0.1f;
-        int maxFrames = 4;
-
-        if (animTimer >= frameTime) {
-            animTimer = 0;
-            currentFrame++;
-
-            if (currentFrame >= maxFrames) {
-                if (state == BeeState::Attack) {
-                    state = BeeState::Fly;
-                    attackCooldown = 1.0f;
-                } else if (state == BeeState::Hit) {
-                    state = BeeState::Fly;
-                    velocity = {0,0};
-                } else {
-                    currentFrame = 0;
-                }
+        const float frameTime = 0.1f;
+        const int maxFrames = 4;
+        const bool loop = (state != BeeState::Attack && state != BeeState::Hit);
+        const bool finished = EnemyCommon::AdvanceAnim(dt, frameTime, maxFrames, currentFrame, animTimer, loop);
+        if (finished) {
+            if (state == BeeState::Attack) {
+                state = BeeState::Fly;
+                attackCooldown = 1.0f;
+            } else if (state == BeeState::Hit) {
+                state = BeeState::Fly;
+                velocity = {0,0};
             }
         }
     }
@@ -180,40 +263,7 @@ namespace JanSordid::SDL_Example
         if (!t) return;
 
         // --- SCHATTEN ---
-        if (shadowTexture) {
-            float shadowW = 20.0f * scale;
-            float shadowH = 10.0f * scale;
-
-            // Schatten Scale
-            float manualOffsetX = 15.0f * scale; // Nach Rechts schieben
-            float manualOffsetY = 5.0f * scale;  // Nach Unten schieben
-            // -----------------------------------
-
-            // Zentrierung + Manueller Offset
-            float centerX = ((size.x * scale - shadowW) / 2.0f) + manualOffsetX;
-
-            FRect sRect = {
-                (position.x * scale) + cam.x + centerX,
-                // Boden Position + Biene Höhe + Offset nach unten
-                (position.y * scale) + cam.y + (size.y * scale) - (shadowH / 2.0f) + manualOffsetY,
-                shadowW,
-                shadowH
-            };
-
-            // Kleiner werden je höher Z ist
-            float scaleFactor = 1.0f - (z / 200.0f);
-            if (scaleFactor < 0.5f) scaleFactor = 0.5f;
-
-            // Skalierung anwenden
-            sRect.w *= scaleFactor;
-            sRect.h *= scaleFactor;
-
-            // Nach Skalierung die Mitte korrigieren, damit er nicht wegdriftet
-            sRect.x += (shadowW - sRect.w) / 2.0f;
-            sRect.y += (shadowH - sRect.h) / 2.0f;
-
-            SDL_RenderTexture(r, shadowTexture.get(), nullptr, &sRect);
-        }
+        EnemyCommon::RenderShadowAirborne(r, shadowTexture.get(), position, size, z, cam, scale);
 
         // --- BIENE ---
         float w, h; SDL_GetTextureSize(t, &w, &h);
@@ -226,6 +276,183 @@ namespace JanSordid::SDL_Example
             (position.y * scale) + cam.y - (z * scale),
             frameW * scale,
             h * scale
+        };
+
+        SDL_FlipMode flip = facingRight ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE;
+        SDL_RenderTextureRotated(r, t, &src, &dst, 0, nullptr, flip);
+    }
+
+    void Mushroom::Init(SDL_Renderer* renderer, float startX, float startY) {
+        position = { startX, startY };
+        maxHp = 40;
+        hp = maxHp;
+        z = 0.0f;
+        state = MushroomState::Idle;
+        attackCooldown = 0.0f;
+        EnemyCommon::ResetAnim(currentFrame, animTimer);
+        deadFinished = false;
+
+        texIdle   = LoadTex(renderer, "asset/enemy/Mushroom/Mushroom-Idle.png");
+        texRun    = LoadTex(renderer, "asset/enemy/Mushroom/Mushroom-Run.png");
+        texAttack = LoadTex(renderer, "asset/enemy/Mushroom/Mushroom-Attack.png");
+        texHit    = LoadTex(renderer, "asset/enemy/Mushroom/Mushroom-Hit.png");
+        texDie    = LoadTex(renderer, "asset/enemy/Mushroom/Mushroom-Die.png");
+
+        shadowTexture.reset(CreateEnemyShadow(renderer));
+
+        if (texIdle) {
+            float w = 0.0f, h = 0.0f;
+            SDL_GetTextureSize(texIdle.get(), &w, &h);
+            frameH = h;
+        }
+    }
+
+    void Mushroom::TakeDamage(int amount) {
+        if (state == MushroomState::Dead || state == MushroomState::Hit) return;
+
+        hp -= amount;
+        if (hp <= 0) {
+            state = MushroomState::Dead;
+            EnemyCommon::ResetAnim(currentFrame, animTimer);
+            deadFinished = false;
+        } else {
+            state = MushroomState::Hit;
+            EnemyCommon::ResetAnim(currentFrame, animTimer);
+        }
+    }
+
+    FRect Mushroom::GetHitbox() const {
+        // Default: Fußpunkt als Referenz
+        const float hbW = 24.0f;
+        const float hbH = 20.0f;
+        const float offX = -12.0f;
+        const float offY = -20.0f;
+        return { position.x + offX, position.y + offY, hbW, hbH };
+    }
+
+    FRect Mushroom::GetAttackBox() const {
+        const float reach = 28.0f;
+        const float hbY = position.y - 20.0f;
+        const float hbH = 20.0f;
+        const float rightX = position.x + 12.0f;
+        const float leftX = position.x - 12.0f - reach;
+        return { facingRight ? rightX : leftX, hbY, reach, hbH };
+    }
+
+    void Mushroom::Update(float dt, Player& player) {
+        if (deadFinished) return;
+        if (attackCooldown > 0) attackCooldown -= dt;
+
+        float distX = (player.position.x + player.size.x/2) - position.x;
+        float distY = (player.position.y + player.size.y/2) - position.y;
+        float dist = std::sqrt(distX*distX + distY*distY);
+
+        if (state != MushroomState::Hit && state != MushroomState::Attack && state != MushroomState::Dead) {
+            facingRight = (distX >= 0);
+        }
+
+        switch (state) {
+            case MushroomState::Idle:
+                velocity = {0,0};
+                if (dist < aggroRadius) {
+                    state = MushroomState::Run;
+                    EnemyCommon::ResetAnim(currentFrame, animTimer);
+                }
+                break;
+
+            case MushroomState::Run:
+                if (dist > 20.0f) {
+                    float speed = 55.0f;
+                    velocity.x = (distX / dist) * speed;
+                    velocity.y = (distY / dist) * speed;
+                } else {
+                    velocity = {0,0};
+                    if (attackCooldown <= 0) {
+                        state = MushroomState::Attack;
+                        EnemyCommon::ResetAnim(currentFrame, animTimer);
+                    }
+                }
+                if (dist > aggroRadius * 2.0f) {
+                    state = MushroomState::Idle;
+                    EnemyCommon::ResetAnim(currentFrame, animTimer);
+                }
+                break;
+
+            case MushroomState::Attack:
+                velocity = {0,0};
+                break;
+
+            case MushroomState::Hit:
+                velocity.x = facingRight ? -40.0f : 40.0f;
+                velocity.y = 0.0f;
+                break;
+
+            case MushroomState::Dead:
+                velocity = {0,0};
+                break;
+        }
+
+        position.x += velocity.x * dt;
+        position.y += velocity.y * dt;
+
+        const int framesIdle = 7;
+        const int framesRun = 8;
+        const int framesAttack = 10;
+        const int framesHit = 5;
+        const int framesDie = 15;
+        const float frameTime = 0.09f;
+
+        int frameCount = framesIdle;
+        bool loop = true;
+        if (state == MushroomState::Run) frameCount = framesRun;
+        if (state == MushroomState::Attack) { frameCount = framesAttack; loop = false; }
+        if (state == MushroomState::Hit) { frameCount = framesHit; loop = false; }
+        if (state == MushroomState::Dead) { frameCount = framesDie; loop = false; }
+
+        const bool finished = EnemyCommon::AdvanceAnim(dt, frameTime, frameCount, currentFrame, animTimer, loop);
+        if (state == MushroomState::Attack) {
+            const int damageFrame = 4;
+            if (currentFrame == damageFrame && attackCooldown <= 0) {
+                float zDiff = std::abs(player.z - z);
+                if (dist < 24.0f && zDiff < 30.0f) {
+                    player.TakeDamage(10);
+                    attackCooldown = 1.2f;
+                }
+            }
+            if (finished) {
+                state = MushroomState::Run;
+                EnemyCommon::ResetAnim(currentFrame, animTimer);
+            }
+        } else if (state == MushroomState::Hit && finished) {
+            state = MushroomState::Run;
+            velocity = {0,0};
+            EnemyCommon::ResetAnim(currentFrame, animTimer);
+        } else if (state == MushroomState::Dead && finished) {
+            deadFinished = true;
+        }
+    }
+
+    void Mushroom::Render(SDL_Renderer* r, FPoint cam, int scale) {
+        if (deadFinished) return;
+        Texture* t = texIdle.get();
+        if (state == MushroomState::Run) t = texRun.get();
+        if (state == MushroomState::Attack) t = texAttack.get();
+        if (state == MushroomState::Hit) t = texHit.get();
+        if (state == MushroomState::Dead) t = texDie.get();
+        if (!t) return;
+
+        EnemyCommon::RenderShadowGrounded(r, shadowTexture.get(), position, z, cam, scale, 22.0f, 8.0f);
+
+        const int frameW = (int)this->frameW;
+        float w, h; SDL_GetTextureSize(t, &w, &h);
+        float frameH = h;
+
+        SDL_FRect src = { (float)(currentFrame * frameW), 0.0f, (float)frameW, frameH };
+        FRect dst = {
+            (position.x * scale) + cam.x - ((float)frameW * scale * 0.5f),
+            (position.y * scale) + cam.y - (frameH * scale) - (z * scale),
+            frameW * scale,
+            frameH * scale
         };
 
         SDL_FlipMode flip = facingRight ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE;

@@ -162,6 +162,7 @@ namespace JanSordid::SDL_Example
 
         Player _player;
         std::vector<Bee> _bees;
+        std::vector<Mushroom> _mushrooms;
 
         FD::Magic::MagicSystem _magic;
 

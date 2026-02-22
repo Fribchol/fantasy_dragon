@@ -67,6 +67,8 @@ namespace JanSordid::SDL_Example
         isDead = false;
         deathTimer = 0.0f;
         deathFrameIndex = 0;
+        attackIndex = 0;
+        comboResetTimer = 0.0f;
     }
 
     void Player::TakeDamage(int amount) {
@@ -100,15 +102,17 @@ namespace JanSordid::SDL_Example
                     animTimer = 0;
                 }
             }
-            if (evt.key.scancode == SDL_SCANCODE_KP_4 ) {
-                isAttacking = true; currentAnim = PlayerAnim::Attack1; currentFrame = 0; animTimer = 0;
-            }
-            if (evt.key.scancode == SDL_SCANCODE_KP_8 ) {
-                isAttacking = true; currentAnim = PlayerAnim::Attack2; currentFrame = 0; animTimer = 0;
-            }
-            if (evt.key.scancode == SDL_SCANCODE_KP_6 ) {
-                isAttacking = true; currentAnim = PlayerAnim::Attack3; currentFrame = 0; animTimer = 0;
-            }
+        }
+        if (evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN && evt.button.button == SDL_BUTTON_LEFT) {
+            if (isAttacking) return;
+            isAttacking = true;
+            if (attackIndex == 0) currentAnim = PlayerAnim::Attack1;
+            else if (attackIndex == 1) currentAnim = PlayerAnim::Attack2;
+            else currentAnim = PlayerAnim::Attack3;
+            attackIndex = (attackIndex + 1) % 3;
+            currentFrame = 0;
+            animTimer = 0;
+            comboResetTimer = comboResetDelay;
         }
     }
 
@@ -134,6 +138,13 @@ namespace JanSordid::SDL_Example
 
     void Player::Update(float dt, const WorldState& world) {
         if (hitTimer > 0.0f) hitTimer -= dt;
+        if (!isAttacking && comboResetTimer > 0.0f) {
+            comboResetTimer -= dt;
+            if (comboResetTimer <= 0.0f) {
+                comboResetTimer = 0.0f;
+                attackIndex = 0;
+            }
+        }
         if (hp <= 0 && !isDead) StartDeath();
         if (isDead) {
             deathTimer += dt;
@@ -213,7 +224,10 @@ namespace JanSordid::SDL_Example
                 if (loop) currentFrame = startCol;
                 else {
                     currentFrame = startCol + frameCount - 1;
-                    if (isAttacking) isAttacking = false;
+                    if (isAttacking) {
+                        isAttacking = false;
+                        comboResetTimer = comboResetDelay;
+                    }
                 }
             }
         }

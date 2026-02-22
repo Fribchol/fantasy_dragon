@@ -203,6 +203,14 @@ namespace JanSordid::SDL_Example
             list.push_back(h);
         }
 
+        static bool AreAllEnemiesDead(const std::vector<Bee>& bees, const std::vector<Mushroom>& mushrooms) {
+            const bool beesDead = std::all_of(bees.begin(), bees.end(),
+                                              [](const Bee& b) { return b.state == BeeState::Dead; });
+            const bool mushDead = std::all_of(mushrooms.begin(), mushrooms.end(),
+                                              [](const Mushroom& m) { return m.state == MushroomState::Dead; });
+            return beesDead && mushDead;
+        }
+
         void ApplyMagicResult(FD::Magic::MagicResult res,
                               Player& player,
                               std::vector<Bee>& bees,
@@ -353,6 +361,7 @@ namespace JanSordid::SDL_Example
 
            // --- GEGNER SPAWNING (Gruppen) ---
            _bees.clear();
+           _mushrooms.clear();
 
            auto SpawnBee = [&](float x, float y) {
                Bee b;
@@ -360,13 +369,21 @@ namespace JanSordid::SDL_Example
                _bees.push_back(std::move(b));
            };
 
+           auto SpawnMushroom = [&](float x, float y) {
+               Mushroom m;
+               m.Init(renderer(), x, y);
+               _mushrooms.push_back(std::move(m));
+           };
+
            // --- GRUPPE 1 ---
            SpawnBee(1200.0f, 220.0f);
+           SpawnMushroom(1400.0f, 240.0f);
 
            // --- GRUPPE 2 ---
            SpawnBee(3000.0f, 150.0f);
            SpawnBee(3080.0f, 250.0f);
            SpawnBee(3150.0f, 180.0f);
+           SpawnMushroom(3300.0f, 240.0f);
 
            // --- GRUPPE 3 (Ende) ---
            SpawnBee(6200.0f, 120.0f);
@@ -374,6 +391,7 @@ namespace JanSordid::SDL_Example
            SpawnBee(6350.0f, 200.0f);
            SpawnBee(6420.0f, 150.0f);
            SpawnBee(6500.0f, 250.0f);
+           SpawnMushroom(6600.0f, 240.0f);
 
            // ---------------------------------
 
@@ -430,6 +448,7 @@ namespace JanSordid::SDL_Example
 
         _player.Init(renderer());
         _bees.clear();
+        _mushrooms.clear();
 
         auto SpawnBee = [&](float x, float y) {
             Bee b;
@@ -437,15 +456,24 @@ namespace JanSordid::SDL_Example
             _bees.push_back(std::move(b));
         };
 
+        auto SpawnMushroom = [&](float x, float y) {
+            Mushroom m;
+            m.Init(renderer(), x, y);
+            _mushrooms.push_back(std::move(m));
+        };
+
         SpawnBee(1200.0f, 220.0f);
+        SpawnMushroom(1400.0f, 240.0f);
         SpawnBee(3000.0f, 150.0f);
         SpawnBee(3080.0f, 250.0f);
         SpawnBee(3150.0f, 180.0f);
+        SpawnMushroom(3300.0f, 240.0f);
         SpawnBee(6200.0f, 120.0f);
         SpawnBee(6280.0f, 280.0f);
         SpawnBee(6350.0f, 200.0f);
         SpawnBee(6420.0f, 150.0f);
         SpawnBee(6500.0f, 250.0f);
+        SpawnMushroom(6600.0f, 240.0f);
 
         _fireballs.clear();
         _explosions.clear();
@@ -597,6 +625,7 @@ namespace JanSordid::SDL_Example
                     return;
                 }
                 for (auto& bee : _bees) { bee.Update(deltaT, _player); }
+                for (auto& mushroom : _mushrooms) { mushroom.Update(deltaT, _player); }
 
                 for (auto& f : _fireballs) {
                     if (!f.alive) continue;
@@ -620,6 +649,18 @@ namespace JanSordid::SDL_Example
                             SpawnExplosion(_explosions, f.pos);
                             f.alive = false;
                             break;
+                        }
+                    }
+                    if (f.alive) {
+                        for (auto& mushroom : _mushrooms) {
+                            if (mushroom.state == MushroomState::Dead) continue;
+                            const FRect mushBox = mushroom.GetHitbox();
+                            if (SDL_HasRectIntersectionFloat(&fbBox, &mushBox)) {
+                                mushroom.TakeDamage(20);
+                                SpawnExplosion(_explosions, f.pos);
+                                f.alive = false;
+                                break;
+                            }
                         }
                     }
                 }
@@ -658,11 +699,17 @@ namespace JanSordid::SDL_Example
                             if (bee.z < 40) { bee.TakeDamage(10); }
                         }
                     }
+                    for (auto& mushroom : _mushrooms) {
+                        if (mushroom.state == MushroomState::Dead) continue;
+                        FRect mushBox = mushroom.GetHitbox();
+                        if (SDL_HasRectIntersectionFloat(&swordBox, &mushBox)) {
+                            mushroom.TakeDamage(10);
+                        }
+                    }
 
                     // 2. NEU: Kiste prüfen
                     if (SDL_HasRectIntersectionFloat(&swordBox, &_chestHitbox)) {
-                        const bool allDead = std::all_of(_bees.begin(), _bees.end(),
-                                                         [](const Bee& b) { return b.state == BeeState::Dead; });
+                        const bool allDead = AreAllEnemiesDead(_bees, _mushrooms);
                         if (allDead) {
                             SDL_Log(">>> KISTE GETROFFEN! LEVEL GESCHAFFT! <<<");
                             _levelFinished = true;
@@ -735,6 +782,10 @@ namespace JanSordid::SDL_Example
                   int beeTileRow = (int)((bee.position.y + 16.0f) / 16.0f);
                   if (beeTileRow == (int)y) bee.Render(renderer(), _camera, _mapScale);
               }
+              for (auto& mushroom : _mushrooms) {
+                  int mushTileRow = (int)(mushroom.position.y / 16.0f);
+                  if (mushTileRow == (int)y) mushroom.Render(renderer(), _camera, _mapScale);
+              }
           }
        }
 
@@ -775,6 +826,23 @@ namespace JanSordid::SDL_Example
                    const float hpRatio = (bee.maxHp > 0) ? std::clamp((float)bee.hp / (float)bee.maxHp, 0.0f, 1.0f) : 0.0f;
                    const float centerX = (bee.position.x + (bee.size.x * 0.5f)) * _mapScale + _camera.x;
                    const float topY = (bee.position.y * _mapScale) + _camera.y - (bee.z * _mapScale) - 18.0f;
+
+                   FRect frameDst = { centerX - (scaledFrameW * 0.5f), topY - scaledFrameH, scaledFrameW, scaledFrameH };
+                   const float fillX = frameDst.x + (scaledFrameW - scaledFillW) * 0.5f;
+                   const float fillY = frameDst.y + (scaledFrameH - scaledFillH) * 0.5f;
+
+                   SDL_FRect fillSrc = { 0.0f, 0.0f, fillW * hpRatio, fillH };
+                   SDL_FRect fillDst = { fillX, fillY, scaledFillW * hpRatio, scaledFillH };
+
+                   SDL_RenderTexture(renderer(), _enemyHpFrame.get(), nullptr, &frameDst);
+                   SDL_RenderTexture(renderer(), _enemyHpFill.get(), &fillSrc, &fillDst);
+               }
+               for (const auto& mushroom : _mushrooms) {
+                   if (mushroom.state == MushroomState::Dead) continue;
+
+                   const float hpRatio = (mushroom.maxHp > 0) ? std::clamp((float)mushroom.hp / (float)mushroom.maxHp, 0.0f, 1.0f) : 0.0f;
+                   const float centerX = (mushroom.position.x * _mapScale) + _camera.x;
+                   const float topY = ((mushroom.position.y - mushroom.frameH) * _mapScale) + _camera.y - (mushroom.z * _mapScale) - 2.0f;
 
                    FRect frameDst = { centerX - (scaledFrameW * 0.5f), topY - scaledFrameH, scaledFrameW, scaledFrameH };
                    const float fillX = frameDst.x + (scaledFrameW - scaledFillW) * 0.5f;
