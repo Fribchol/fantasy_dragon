@@ -186,6 +186,7 @@ namespace JanSordid::SDL_Example
         bool   _flipH = false;
         bool   _flipV = false;
         int    _rotSteps = 0; // 0,1,2,3 => 0,90,180,270
+        bool   _eraseMode = false;
 
         i32    _mapScale     = 2;
         i32    _paletteScale = 1;
