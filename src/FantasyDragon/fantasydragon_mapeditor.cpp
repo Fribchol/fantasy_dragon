@@ -44,6 +44,7 @@ namespace JanSordid::SDL_Example
     void SaveMapToFile(const std::string& filename, const EditorState::WorldState& layers) {
         std::ofstream file(filename);
         if (file.is_open()) {
+            file << "#EMPTY=-1\n";
             for (int l = 0; l < 3; ++l) {
                 file << "[Layer" << l << "]\n";
                 for (const auto& row : layers[l]) {
@@ -62,18 +63,32 @@ namespace JanSordid::SDL_Example
             std::string line;
             int currentLayer = -1;
             int rowIdx = 0;
+            bool hasHeader = false;
             while (std::getline(file, line)) {
                 if (line.empty()) continue;
+                if (line.rfind("#", 0) == 0) {
+                    if (line.rfind("#EMPTY=-1", 0) == 0) hasHeader = true;
+                    continue;
+                }
                 if (line.find("[Layer") != std::string::npos) { currentLayer++; rowIdx = 0; continue; }
                 if (currentLayer >= 0 && currentLayer < 3 && rowIdx < (int)layers[0].size()) {
                     std::stringstream ss(line);
                     for (size_t i = 0; i < layers[0][0].size(); ++i) {
-                        if (!(ss >> layers[currentLayer][rowIdx][i])) { layers[currentLayer][rowIdx][i] = 0; }
+                        if (!(ss >> layers[currentLayer][rowIdx][i])) { layers[currentLayer][rowIdx][i] = -1; }
                     }
                     rowIdx++;
                 }
             }
             file.close();
+            if (!hasHeader) {
+                for (int l = 0; l < 3; ++l) {
+                    for (auto& row : layers[l]) {
+                        for (auto& cell : row) {
+                            if (cell == 0) cell = -1;
+                        }
+                    }
+                }
+            }
             SDL_Log("Map (3 Layer) geladen: %s", filename.c_str());
             return true;
         }
@@ -187,7 +202,9 @@ namespace JanSordid::SDL_Example
 
             for (int y = 0; y < (int)map.size(); ++y) {
                 for (int x = 0; x < (int)map[y].size(); ++x) {
-                    const int id = map[y][x] & kTileIdMask;
+                    const int raw = map[y][x];
+                    if (raw < 0) continue;
+                    const int id = raw & kTileIdMask;
                     if (id == chestId00 || id == chestId01 || id == chestId10 || id == chestId11) {
                         found = true;
                         if (x < minX) minX = x;
@@ -389,7 +406,7 @@ namespace JanSordid::SDL_Example
        }
 
        if( _doGenerateEmptyMap ) {
-          const int FillTile = 0;
+          const int FillTile = -1;
           for(int l = 0; l < 3; ++l) {
               for( auto & row : (*_currState)[l] ) { row.fill( FillTile ); }
           }
@@ -602,7 +619,7 @@ namespace JanSordid::SDL_Example
                                    const int srcY = _pickedIdx.y + srcRY;
                                    if (srcX < _tileCount.x && srcY < _tileCount.y) {
                                        if (_eraseMode) {
-                                           curLayerMap[targetY][targetX] = 0;
+                                           curLayerMap[targetY][targetX] = -1;
                                        } else {
                                            int tileId = srcX + srcY * _tileCount.x;
                                            if (_flipH) tileId |= kFlipH;
@@ -647,7 +664,7 @@ namespace JanSordid::SDL_Example
                                const int srcY = _pickedIdx.y + srcRY;
                                if (srcX < _tileCount.x && srcY < _tileCount.y) {
                                    if (_eraseMode) {
-                                       curLayerMap[targetY][targetX] = 0;
+                                       curLayerMap[targetY][targetX] = -1;
                                    } else {
                                        int tileId = srcX + srcY * _tileCount.x;
                                        if (_flipH) tileId |= kFlipH;
@@ -818,11 +835,11 @@ namespace JanSordid::SDL_Example
        if(GlobalSettings::isEditorMode && _activeLayer != 0) SDL_SetTextureAlphaMod(_tileSet.get(), 100);
 
        for( size_t y = 0; y < backgroundLayer.size(); ++y ) {
-          for( size_t x = 0; x < backgroundLayer[y].size(); ++x ) {
-             int idx = backgroundLayer[y][x];
-             int baseId = idx & kTileIdMask;
-             if (baseId == 0) continue;
-             Point tIdx = { baseId % _tileCount.x, baseId / _tileCount.x };
+            for( size_t x = 0; x < backgroundLayer[y].size(); ++x ) {
+               int idx = backgroundLayer[y][x];
+               if (idx < 0) continue;
+               int baseId = idx & kTileIdMask;
+               Point tIdx = { baseId % _tileCount.x, baseId / _tileCount.x };
              FRect srcR = toFRect( toF(tIdx * _tileSize), toF(_tileSize) );
              FRect dstR = toFRect( FPoint{(f32)x, (f32)y} * mapTS + _camera, mapTS );
              SDL_FlipMode flip = SDL_FLIP_NONE;
@@ -839,19 +856,18 @@ namespace JanSordid::SDL_Example
 
        for( size_t y = 0; y < layer1.size(); ++y ) {
           if(GlobalSettings::isEditorMode && _activeLayer != 1) SDL_SetTextureAlphaMod(_tileSet.get(), 100);
-          for( size_t x = 0; x < layer1[y].size(); ++x ) {
-             int idx = layer1[y][x];
-             int baseId = idx & kTileIdMask;
-             if (baseId != 0) {
-                 Point tIdx = { baseId % _tileCount.x, baseId / _tileCount.x };
-                 FRect srcR = toFRect( toF(tIdx * _tileSize), toF(_tileSize) );
-                 FRect dstR = toFRect( FPoint{(f32)x, (f32)y} * mapTS + _camera, mapTS );
-                 SDL_FlipMode flip = SDL_FLIP_NONE;
-                 if (idx & kFlipH) flip = (SDL_FlipMode)(flip | SDL_FLIP_HORIZONTAL);
-                 if (idx & kFlipV) flip = (SDL_FlipMode)(flip | SDL_FLIP_VERTICAL);
-                 const float angle = (float)(((idx & kRotMask) >> kRotShift) * 90);
-                 SDL_RenderTextureRotated( renderer(), _tileSet.get(), &srcR, &dstR, angle, nullptr, flip );
-             }
+            for( size_t x = 0; x < layer1[y].size(); ++x ) {
+               int idx = layer1[y][x];
+               if (idx < 0) continue;
+               int baseId = idx & kTileIdMask;
+               Point tIdx = { baseId % _tileCount.x, baseId / _tileCount.x };
+               FRect srcR = toFRect( toF(tIdx * _tileSize), toF(_tileSize) );
+               FRect dstR = toFRect( FPoint{(f32)x, (f32)y} * mapTS + _camera, mapTS );
+               SDL_FlipMode flip = SDL_FLIP_NONE;
+               if (idx & kFlipH) flip = (SDL_FlipMode)(flip | SDL_FLIP_HORIZONTAL);
+               if (idx & kFlipV) flip = (SDL_FlipMode)(flip | SDL_FLIP_VERTICAL);
+               const float angle = (float)(((idx & kRotMask) >> kRotShift) * 90);
+               SDL_RenderTextureRotated( renderer(), _tileSet.get(), &srcR, &dstR, angle, nullptr, flip );
           }
           if(GlobalSettings::isEditorMode) SDL_SetTextureAlphaMod(_tileSet.get(), 255);
 
@@ -879,19 +895,18 @@ namespace JanSordid::SDL_Example
        if(GlobalSettings::isEditorMode && _activeLayer != 2) SDL_SetTextureAlphaMod(_tileSet.get(), 100);
 
        for( size_t y = 0; y < layer2.size(); ++y ) {
-          for( size_t x = 0; x < layer2[y].size(); ++x ) {
-             int idx = layer2[y][x];
-             int baseId = idx & kTileIdMask;
-             if (baseId != 0) {
-                 Point tIdx = { baseId % _tileCount.x, baseId / _tileCount.x };
-                 FRect srcR = toFRect( toF(tIdx * _tileSize), toF(_tileSize) );
-                 FRect dstR = toFRect( FPoint{(f32)x, (f32)y} * mapTS + _camera, mapTS );
-                 SDL_FlipMode flip = SDL_FLIP_NONE;
-                 if (idx & kFlipH) flip = (SDL_FlipMode)(flip | SDL_FLIP_HORIZONTAL);
-                 if (idx & kFlipV) flip = (SDL_FlipMode)(flip | SDL_FLIP_VERTICAL);
-                 const float angle = (float)(((idx & kRotMask) >> kRotShift) * 90);
-                 SDL_RenderTextureRotated( renderer(), _tileSet.get(), &srcR, &dstR, angle, nullptr, flip );
-             }
+            for( size_t x = 0; x < layer2[y].size(); ++x ) {
+               int idx = layer2[y][x];
+               if (idx < 0) continue;
+               int baseId = idx & kTileIdMask;
+               Point tIdx = { baseId % _tileCount.x, baseId / _tileCount.x };
+               FRect srcR = toFRect( toF(tIdx * _tileSize), toF(_tileSize) );
+               FRect dstR = toFRect( FPoint{(f32)x, (f32)y} * mapTS + _camera, mapTS );
+               SDL_FlipMode flip = SDL_FLIP_NONE;
+               if (idx & kFlipH) flip = (SDL_FlipMode)(flip | SDL_FLIP_HORIZONTAL);
+               if (idx & kFlipV) flip = (SDL_FlipMode)(flip | SDL_FLIP_VERTICAL);
+               const float angle = (float)(((idx & kRotMask) >> kRotShift) * 90);
+               SDL_RenderTextureRotated( renderer(), _tileSet.get(), &srcR, &dstR, angle, nullptr, flip );
           }
        }
        if(GlobalSettings::isEditorMode) SDL_SetTextureAlphaMod(_tileSet.get(), 255);
@@ -1144,18 +1159,31 @@ namespace JanSordid::SDL_Example
                SDL_RenderRect(renderer(), &pickR);
            }
 
-           if(_font) {
-               std::ostringstream oss;
-               std::string layerName = (_activeLayer == 0) ? "1: HINTERGRUND" : (_activeLayer == 1) ? "2: SPIELEBENE" : "3: VORDERGRUND";
-               oss << "Editor Mode - AKTIVER LAYER: " << layerName
-                   << "\n[1,2,3] Layer wechseln"
-                   << "\n[ESC] Main Menu"
-                     << "\n[TAB] Palette"
-                     << "\n[F1,F2] Zoom"
-                     << "\n[F6] Grid"
-                     << "\n[Backspace] Loeschen: " << (_eraseMode ? "AN" : "AUS")
-                     << "\n[H] Flip H  [V] Flip V  [R] Rotieren"
-                     << "\n[F8] Save [F9] Load";
+            if(_font) {
+                const int selX0 = _pickedIdx.x;
+                const int selY0 = _pickedIdx.y;
+                const int selX1 = _pickedIdx.x + _pickedSize.x - 1;
+                const int selY1 = _pickedIdx.y + _pickedSize.y - 1;
+                const int selId0 = selX0 + (selY0 * _tileCount.x);
+                const int selId1 = selX1 + (selY1 * _tileCount.x);
+
+                std::ostringstream oss;
+                std::string layerName = (_activeLayer == 0) ? "1: HINTERGRUND" : (_activeLayer == 1) ? "2: SPIELEBENE" : "3: VORDERGRUND";
+                oss << "Editor Mode - AKTIVER LAYER: " << layerName
+                     << "\n[1,2,3] Layer wechseln"
+                     << "\n[ESC] Main Menu"
+                       << "\n[TAB] Palette"
+                       << "\n[F1,F2] Zoom"
+                       << "\n[F6] Grid"
+                       << "\n[Backspace] Loeschen: " << (_eraseMode ? "AN" : "AUS")
+                       << "\n[H] Flip H  [V] Flip V  [R] Rotieren"
+                       << "\n[F8] Save [F9] Load"
+                       << "\n"
+                       << "\nAuswahl (0-basiert):"
+                       << "\n  col " << selX0 << " - " << selX1
+                       << ", row " << selY0 << " - " << selY1
+                       << "  (Groesse " << _pickedSize.x << "x" << _pickedSize.y << ")"
+                       << "\n  Tile-ID " << selId0 << " - " << selId1;
 
                Owned<Surface> s(TTF_RenderText_Blended_Wrapped(_font.get(), oss.str().c_str(), 0, {255,255,255,255}, 800));
                if(s) {
