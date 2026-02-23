@@ -237,15 +237,33 @@ namespace JanSordid::SDL_Example
         if (!spriteSheet) return;
         if (hitTimer > 0.0f && (int)(hitTimer * 15) % 2 == 0) return;
 
+        // --- DYNAMISCHER SCHATTEN ---
         if (shadowTexture) {
-            float shadowW = 20.0f * scale; float shadowH = 10.0f * scale;
+            // Berechnet, wie klein der Schatten sein soll. Bei z=0 ist er 1.0 (100%),
+            // je höher man springt, desto kleiner wird der Faktor (bis minimal 30% Größe).
+            float shrinkFactor = std::max(0.3f, 1.0f - (z / 100.0f));
+
+            float shadowW = 20.0f * scale * shrinkFactor;
+            float shadowH = 10.0f * scale * shrinkFactor;
+
+            // Mitte der Standfläche berechnen, damit der Schatten zur Mitte hin schrumpft
+            float centerX = (position.x * scale) + camera.x + (size.x * scale / 2.0f);
+            float centerY = (position.y * scale) + camera.y + (size.y * scale / 2.0f) + ((10.0f * scale) / 2.0f);
+
             FRect shadowRect = {
-                (position.x * scale) + camera.x + (size.x * scale / 2.0f) - (shadowW / 2.0f),
-                (position.y * scale) + camera.y + (size.y * scale / 2.0f),
-                shadowW, shadowH
+                centerX - (shadowW / 2.0f),
+                centerY - (shadowH / 2.0f),
+                shadowW,
+                shadowH
             };
+
+            // Der Schatten wird zusätzlich leicht transparent, je höher der Spieler springt
+            SDL_SetTextureAlphaMod(shadowTexture.get(), (Uint8)(255 * shrinkFactor));
             SDL_RenderTexture(renderer, shadowTexture.get(), nullptr, &shadowRect);
+            // Alpha wieder zurücksetzen, damit andere Rendervorgänge normal bleiben
+            SDL_SetTextureAlphaMod(shadowTexture.get(), 255);
         }
+        // -----------------------------
 
         if (isDead && deathSheet) {
             const float frameW = 50.0f;
@@ -309,4 +327,3 @@ namespace JanSordid::SDL_Example
         return isDead && deathFrameIndex >= 7;
     }
 }
-

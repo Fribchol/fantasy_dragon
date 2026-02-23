@@ -19,6 +19,7 @@
 #include <memory>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 
 // --- CMAKE OVERRIDE FIX ---
 #ifdef BasePathFont
@@ -80,6 +81,7 @@ namespace JanSordid::SDL_Example
 
     struct GlobalSettings {
         static int musicVolume;
+        static int sfxVolume;
         static bool isFullscreen;
         static bool isEditorMode;
     };
@@ -131,6 +133,9 @@ namespace JanSordid::SDL_Example
         void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
         constexpr Color clearColor() const noexcept override { return Color{ 100, 100, 100, 255 }; }
 
+        // Sound-Ressourcen
+        void PlaySFX(const std::string& name, int loops = 0);
+
         using WorldState = Array<MapType, 3>;
 
     private:
@@ -145,6 +150,9 @@ namespace JanSordid::SDL_Example
         Owned<Texture> _uiManaFill;
         Owned<Texture> _enemyHpFrame;
         Owned<Texture> _enemyHpFill;
+
+        std::map<std::string, Mix_Chunk*> _sfx;
+        int _beeChannel = -1; // Kanal für das Summen
 
         const bool _doGenerateEmptyMap = true;
         WorldState _worldState1;
@@ -243,6 +251,6 @@ namespace JanSordid::SDL_Example
 
     private:
         bool DrawButton(const char* text, float y, float mouseX, float mouseY, bool isClicked);
-        bool DrawSlider(const char* label, float y, float mouseX, float mouseY, bool isMouseDown);
+        bool DrawSlider(const char* label, float y, float mouseX, float mouseY, bool isMouseDown, int& volumeRef);
     };
 }
