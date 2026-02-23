@@ -944,9 +944,9 @@ namespace JanSordid::SDL_Example
                float hpW, hpH; SDL_GetTextureSize(_uiHpFill.get(), &hpW, &hpH);
                float manaW, manaH; SDL_GetTextureSize(_uiManaFill.get(), &manaW, &manaH);
                SDL_FRect hpSrc = { 0.0f, 0.0f, hpW * std::clamp((float)_player.hp / (float)_player.maxHp, 0.0f, 1.0f), hpH };
-               SDL_FRect hpDst = { frameDst.x + (30.0f * uiScale), frameDst.y + (30.0f * uiScale), (hpW * uiScale) * hpSrc.w / hpW, hpH * uiScale };
+               SDL_FRect hpDst = { frameDst.x + (30.0f * uiScale) + 105.0f, frameDst.y + (30.0f * uiScale), (hpW * uiScale) * hpSrc.w / hpW, hpH * uiScale };
                SDL_FRect manaSrc = { 0.0f, 0.0f, manaW * std::clamp((float)_player.mana / (float)_player.maxMana, 0.0f, 1.0f), manaH };
-               SDL_FRect manaDst = { frameDst.x + (25.0f * uiScale), frameDst.y + (50.0f * uiScale), (manaW * uiScale) * manaSrc.w / manaW, manaH * uiScale };
+               SDL_FRect manaDst = { frameDst.x + (30.0f * uiScale) + 110.0f, frameDst.y + (50.0f * uiScale), (manaW * uiScale) * manaSrc.w / manaW, manaH * uiScale };
                SDL_RenderTexture(renderer(), _uiFrame.get(), nullptr, &frameDst);
                SDL_RenderTexture(renderer(), _uiHpFill.get(), &hpSrc, &hpDst);
                SDL_RenderTexture(renderer(), _uiManaFill.get(), &manaSrc, &manaDst);
