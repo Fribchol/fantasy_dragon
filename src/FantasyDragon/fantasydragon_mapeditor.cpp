@@ -548,10 +548,11 @@ namespace JanSordid::SDL_Example
                if (evt.key.scancode == SDL_SCANCODE_2) _activeLayer = 1;
                if (evt.key.scancode == SDL_SCANCODE_3) _activeLayer = 2;
 
-               if (evt.key.scancode == SDL_SCANCODE_F1) _mapScale = 1;
-               if (evt.key.scancode == SDL_SCANCODE_F2) _mapScale = 2;
-               if (evt.key.scancode == SDL_SCANCODE_F6 && evt.key.repeat == 0) _showGrid = !_showGrid;
-               if (evt.key.scancode == SDL_SCANCODE_H && evt.key.repeat == 0) _flipH = !_flipH;
+                if (evt.key.scancode == SDL_SCANCODE_F1) _mapScale = 1;
+                if (evt.key.scancode == SDL_SCANCODE_F2) _mapScale = 2;
+                if (evt.key.scancode == SDL_SCANCODE_F6 && evt.key.repeat == 0) _showGrid = !_showGrid;
+                if (evt.key.scancode == SDL_SCANCODE_BACKSPACE && evt.key.repeat == 0) _eraseMode = !_eraseMode;
+                if (evt.key.scancode == SDL_SCANCODE_H && evt.key.repeat == 0) _flipH = !_flipH;
                if (evt.key.scancode == SDL_SCANCODE_V && evt.key.repeat == 0) _flipV = !_flipV;
                if (evt.key.scancode == SDL_SCANCODE_R && evt.key.repeat == 0) _rotSteps = (_rotSteps + 3) & 3;
            }
@@ -597,16 +598,20 @@ namespace JanSordid::SDL_Example
                              if(targetY >= 0 && (size_t)targetY < curLayerMap.size() && targetX >= 0 && (size_t)targetX < curLayerMap[0].size()) {
                                  int srcRX = 0, srcRY = 0;
                                  MapSelectionToSource(px, py, _pickedSize.x, _pickedSize.y, _rotSteps, _flipH, _flipV, srcRX, srcRY);
-                                 const int srcX = _pickedIdx.x + srcRX;
-                                 const int srcY = _pickedIdx.y + srcRY;
-                                 if (srcX < _tileCount.x && srcY < _tileCount.y) {
-                                     int tileId = srcX + srcY * _tileCount.x;
-                                     if (_flipH) tileId |= kFlipH;
-                                     if (_flipV) tileId |= kFlipV;
-                                     const int tileRot = (_rotSteps + ((_rotSteps & 1) ? 2 : 0)) & 3;
-                                     tileId |= ((tileRot & 3) << kRotShift);
-                                     curLayerMap[targetY][targetX] = tileId;
-                                 }
+                                   const int srcX = _pickedIdx.x + srcRX;
+                                   const int srcY = _pickedIdx.y + srcRY;
+                                   if (srcX < _tileCount.x && srcY < _tileCount.y) {
+                                       if (_eraseMode) {
+                                           curLayerMap[targetY][targetX] = 0;
+                                       } else {
+                                           int tileId = srcX + srcY * _tileCount.x;
+                                           if (_flipH) tileId |= kFlipH;
+                                           if (_flipV) tileId |= kFlipV;
+                                           const int tileRot = (_rotSteps + ((_rotSteps & 1) ? 2 : 0)) & 3;
+                                           tileId |= ((tileRot & 3) << kRotShift);
+                                           curLayerMap[targetY][targetX] = tileId;
+                                       }
+                                   }
                              }
                          }
                      }
@@ -638,16 +643,20 @@ namespace JanSordid::SDL_Example
                              if(targetY >= 0 && (size_t)targetY < curLayerMap.size() && targetX >= 0 && (size_t)targetX < curLayerMap[0].size()) {
                              int srcRX = 0, srcRY = 0;
                              MapSelectionToSource(px, py, _pickedSize.x, _pickedSize.y, _rotSteps, _flipH, _flipV, srcRX, srcRY);
-                             const int srcX = _pickedIdx.x + srcRX;
-                             const int srcY = _pickedIdx.y + srcRY;
-                             if (srcX < _tileCount.x && srcY < _tileCount.y) {
-                                 int tileId = srcX + srcY * _tileCount.x;
-                                 if (_flipH) tileId |= kFlipH;
-                                 if (_flipV) tileId |= kFlipV;
-                                 const int tileRot = (_rotSteps + ((_rotSteps & 1) ? 2 : 0)) & 3;
-                                 tileId |= ((tileRot & 3) << kRotShift);
-                                 curLayerMap[targetY][targetX] = tileId;
-                             }
+                               const int srcX = _pickedIdx.x + srcRX;
+                               const int srcY = _pickedIdx.y + srcRY;
+                               if (srcX < _tileCount.x && srcY < _tileCount.y) {
+                                   if (_eraseMode) {
+                                       curLayerMap[targetY][targetX] = 0;
+                                   } else {
+                                       int tileId = srcX + srcY * _tileCount.x;
+                                       if (_flipH) tileId |= kFlipH;
+                                       if (_flipV) tileId |= kFlipV;
+                                       const int tileRot = (_rotSteps + ((_rotSteps & 1) ? 2 : 0)) & 3;
+                                       tileId |= ((tileRot & 3) << kRotShift);
+                                       curLayerMap[targetY][targetX] = tileId;
+                                   }
+                               }
                              }
                          }
                    }
@@ -1141,11 +1150,12 @@ namespace JanSordid::SDL_Example
                oss << "Editor Mode - AKTIVER LAYER: " << layerName
                    << "\n[1,2,3] Layer wechseln"
                    << "\n[ESC] Main Menu"
-                   << "\n[TAB] Palette"
-                   << "\n[F1,F2] Zoom"
-                   << "\n[F6] Grid"
-                   << "\n[H] Flip H  [V] Flip V  [R] Rotieren"
-                   << "\n[F8] Save [F9] Load";
+                     << "\n[TAB] Palette"
+                     << "\n[F1,F2] Zoom"
+                     << "\n[F6] Grid"
+                     << "\n[Backspace] Loeschen: " << (_eraseMode ? "AN" : "AUS")
+                     << "\n[H] Flip H  [V] Flip V  [R] Rotieren"
+                     << "\n[F8] Save [F9] Load";
 
                Owned<Surface> s(TTF_RenderText_Blended_Wrapped(_font.get(), oss.str().c_str(), 0, {255,255,255,255}, 800));
                if(s) {
