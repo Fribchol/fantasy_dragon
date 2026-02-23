@@ -133,7 +133,6 @@ namespace JanSordid::SDL_Example
         void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
         constexpr Color clearColor() const noexcept override { return Color{ 100, 100, 100, 255 }; }
 
-        // Sound-Ressourcen
         void PlaySFX(const std::string& name, int loops = 0);
 
         using WorldState = Array<MapType, 3>;
@@ -152,7 +151,7 @@ namespace JanSordid::SDL_Example
         Owned<Texture> _enemyHpFill;
 
         std::map<std::string, Mix_Chunk*> _sfx;
-        int _beeChannel = -1; // Kanal für das Summen
+        int _beeChannel = -1;
 
         const bool _doGenerateEmptyMap = true;
         WorldState _worldState1;
@@ -185,8 +184,7 @@ namespace JanSordid::SDL_Example
         bool   _isSelectingPalette = false;
         bool   _flipH = false;
         bool   _flipV = false;
-        int    _rotSteps = 0; // 0,1,2,3 => 0,90,180,270
-        bool   _eraseMode = false;
+        int    _rotSteps = 0;
 
         i32    _mapScale     = 2;
         i32    _paletteScale = 1;
@@ -198,8 +196,7 @@ namespace JanSordid::SDL_Example
         constexpr static Duration UpdateDeltaTime = 16ms;
         Duration _nextUpdateTime = {};
 
-        // --- NEUE VARIABLEN FÜR DAS LEVEL-ENDE ---
-        FRect _chestHitbox;  // Wo steht die Kiste?
+        FRect _chestHitbox;
         bool _levelFinished = false;
         float _finishTimer = 0.0f;
         float _manaRegenAccu = 0.0f;
