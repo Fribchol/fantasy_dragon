@@ -174,6 +174,9 @@ namespace JanSordid::SDL_Example
         Point  _pickedSize         = Point{ 1, 1 };
         Point  _selectionStart     = Point{ 0, 0 };
         bool   _isSelectingPalette = false;
+        bool   _flipH = false;
+        bool   _flipV = false;
+        int    _rotSteps = 0; // 0,1,2,3 => 0,90,180,270
 
         i32    _mapScale     = 2;
         i32    _paletteScale = 1;
