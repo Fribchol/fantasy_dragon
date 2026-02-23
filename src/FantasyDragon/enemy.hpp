@@ -58,4 +58,50 @@ namespace JanSordid::SDL_Example
         FRect GetHitbox() const;
         FRect GetAttackBox() const;
     };
+
+    enum class MushroomState {
+        Idle,
+        Run,
+        Attack,
+        Hit,
+        Dead
+    };
+
+    struct Mushroom {
+        // position ist der Fuss-Punkt (Mitte X, Boden Y)
+        FPoint position = { 400.0f, 220.0f };
+        FPoint velocity = { 0.0f, 0.0f };
+        float z = 0.0f;
+
+        FPoint size = { 32.0f, 32.0f };
+
+        int maxHp = 40;
+        int hp = 40;
+        bool facingRight = true;
+
+        MushroomState state = MushroomState::Idle;
+        float aggroRadius = 220.0f;
+        float attackCooldown = 0.0f;
+
+        int currentFrame = 0;
+        float animTimer = 0.0f;
+        float frameW = 80.0f;
+        float frameH = 64.0f;
+        bool deadFinished = false;
+
+        Owned<Texture> texIdle;
+        Owned<Texture> texRun;
+        Owned<Texture> texAttack;
+        Owned<Texture> texHit;
+        Owned<Texture> texDie;
+        Owned<Texture> shadowTexture;
+
+        void Init(SDL_Renderer* renderer, float startX, float startY);
+        void Update(float dt, Player& player);
+        void Render(SDL_Renderer* renderer, FPoint camera, int scale);
+
+        void TakeDamage(int amount);
+        FRect GetHitbox() const;
+        FRect GetAttackBox() const;
+    };
 }

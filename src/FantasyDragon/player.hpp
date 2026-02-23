@@ -55,6 +55,9 @@ namespace JanSordid::SDL_Example
 
         bool facingRight = true;
         bool isAttacking = false;
+        int attackIndex = 0;
+        float comboResetTimer = 0.0f;
+        float comboResetDelay = 0.7f;
 
         PlayerAnim currentAnim = PlayerAnim::Idle;
         float animTimer = 0.0f;
