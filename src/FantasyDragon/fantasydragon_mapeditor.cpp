@@ -140,8 +140,8 @@ namespace JanSordid::SDL_Example
 
     void SDLCALL OnMapLoad(void* userdata, const char* const* filelist, int filter) {
         if (!filelist || !filelist[0]) return;
-        auto* layers = static_cast<EditorState::WorldState*>(userdata);
-        if(layers) LoadMapFromFile(filelist[0], *layers);
+        auto* editor = static_cast<EditorState*>(userdata);
+        if (editor) editor->LoadMapFromFileAndRebuild(filelist[0]);
     }
 
     void SDLCALL OnSelectMapForGame(void* userdata, const char* const* filelist, int filter) {
@@ -223,9 +223,9 @@ namespace JanSordid::SDL_Example
 
             const int tilesetCols = tileCount.x;
             const int chestX0 = 18;
-            const int chestY0 = 19;
+            const int chestY0 = 17;
             const int chestX1 = 19;
-            const int chestY1 = 20;
+            const int chestY1 = 18;
 
             const int chestId00 = chestX0 + chestY0 * tilesetCols;
             const int chestId01 = chestX0 + chestY1 * tilesetCols;
@@ -252,13 +252,18 @@ namespace JanSordid::SDL_Example
                 }
             }
 
-            if (!found) return false;
+            if (!found) {
+                SDL_Log("Kiste nicht gefunden: Tiles (18,19)-(19,20) fehlen im Layer %d.", layerIndex);
+                return false;
+            }
 
             const float tileSize = 16.0f;
             outHitbox.x = (float)minX * tileSize;
             outHitbox.y = (float)minY * tileSize;
             outHitbox.w = (float)(maxX - minX + 1) * tileSize;
             outHitbox.h = (float)(maxY - minY + 1) * tileSize;
+            SDL_Log("Kiste erkannt: Hitbox (%.1f, %.1f, %.1f, %.1f) in Layer %d.",
+                    outHitbox.x, outHitbox.y, outHitbox.w, outHitbox.h, layerIndex);
             return true;
         }
 
@@ -329,6 +334,15 @@ namespace JanSordid::SDL_Example
                 default: break;
             }
         }
+    }
+
+    void EditorState::LoadMapFromFileAndRebuild(const char* path) {
+        if (!path) return;
+        if (LoadMapFromFile(path, *_currState)) {
+            _currentGameMapPath = path;
+        }
+        _chestHitbox = { 0.0f, 0.0f, 0.0f, 0.0f };
+        BuildChestHitboxFromMap(*_currState, 1, _tileCount, _chestHitbox);
     }
 
     void EditorState::Init() {
@@ -446,8 +460,7 @@ namespace JanSordid::SDL_Example
        } else {
            _showPalette = false; _showGrid = false;
            if (!g_PendingGameMap.empty()) {
-               LoadMapFromFile(g_PendingGameMap, *_currState);
-               _currentGameMapPath = g_PendingGameMap;
+               LoadMapFromFileAndRebuild(g_PendingGameMap.c_str());
                g_PendingGameMap = "";
            }
        }
@@ -505,7 +518,7 @@ namespace JanSordid::SDL_Example
         _magic.Cancel();
 
         if (!_currentGameMapPath.empty()) {
-            LoadMapFromFile(_currentGameMapPath, *_currState);
+            LoadMapFromFileAndRebuild(_currentGameMapPath.c_str());
         }
 
         int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
@@ -536,7 +549,7 @@ namespace JanSordid::SDL_Example
            if (GlobalSettings::isEditorMode) {
                if (evt.key.scancode == SDL_SCANCODE_TAB && evt.key.repeat == 0) _showPalette = !_showPalette;
                if (evt.key.scancode == SDL_SCANCODE_F8) SDL_ShowSaveFileDialog(OnMapSave, _currState, window(), nullptr, 0, defaultPath);
-               if (evt.key.scancode == SDL_SCANCODE_F9) SDL_ShowOpenFileDialog(OnMapLoad, _currState, window(), nullptr, 0, defaultPath, false);
+               if (evt.key.scancode == SDL_SCANCODE_F9) SDL_ShowOpenFileDialog(OnMapLoad, this, window(), nullptr, 0, defaultPath, false);
 
                if (evt.key.scancode == SDL_SCANCODE_1) _activeLayer = 0;
                if (evt.key.scancode == SDL_SCANCODE_2) _activeLayer = 1;
@@ -817,6 +830,7 @@ namespace JanSordid::SDL_Example
                         }
                     }
                     if (SDL_HasRectIntersectionFloat(&swordBox, &_chestHitbox)) {
+                        SDL_Log("Kiste getroffen (Schwert)!");
                         if (AreAllEnemiesDead(_bees, _mushrooms)) _levelFinished = true;
                     }
                 }
@@ -1043,7 +1057,9 @@ namespace JanSordid::SDL_Example
                    << "\n[F1,F2] Zoom"
                    << "\n[F6] Grid"
                    << "\n[H] Flip H  [V] Flip V  [R] Rotieren"
-                   << "\n[F8] Save [F9] Load";
+                   << "\n[F8] Save [F9] Load"
+                   << "\nAuswahl: (" << _pickedIdx.x << "," << _pickedIdx.y << ") "
+                   << _pickedSize.x << "x" << _pickedSize.y;
 
                Owned<Surface> s(TTF_RenderText_Blended_Wrapped(_font.get(), oss.str().c_str(), 0, {255,255,255,255}, 800));
                if(s) {

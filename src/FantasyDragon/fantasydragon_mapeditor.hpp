@@ -132,6 +132,7 @@ namespace JanSordid::SDL_Example
         void Update( u64 framesSinceStart, Duration timeSinceStart, f32 deltaT ) override;
         void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
         constexpr Color clearColor() const noexcept override { return Color{ 100, 100, 100, 255 }; }
+        void LoadMapFromFileAndRebuild(const char* path);
 
         void PlaySFX(const std::string& name, int loops = 0);
 
