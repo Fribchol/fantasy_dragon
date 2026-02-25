@@ -130,7 +130,7 @@ namespace JanSordid::SDL_Example
 
         for (int y = minY; y <= maxY; ++y) {
             for (int x = minX; x <= maxX; ++x) {
-                if (map[y][x] != 0) return true;
+                if (map[y][x] >= 0) return true;
             }
         }
         return false;
