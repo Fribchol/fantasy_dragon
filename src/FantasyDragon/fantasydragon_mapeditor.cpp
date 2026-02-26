@@ -343,6 +343,7 @@ namespace JanSordid::SDL_Example
                 case FD::Magic::MagicResult::Heal:
                     SDL_Log(">>> CAST: HEAL <<<");
                     player.hp = std::min(player.hp + 25, player.maxHp);
+                    if (state) state->PlaySFX("Heal.wav", 0);
                     SpawnHeal(heals, FPoint{player.position.x + (player.size.x * 0.5f),
                                             player.position.y - player.size.y});
                     break;
@@ -369,12 +370,12 @@ namespace JanSordid::SDL_Example
 
        Mix_AllocateChannels(32);
 
-       std::vector<std::string> sfxFiles = {
-           "Bee_Sting.mp3", "Blade_swing_01.mp3", "Blade_swing_02.mp3", "Blade_swing_03.mp3",
-           "Fireball_explosion.mp3", "Fireball_fly.mp3", "Mob_hit.mp3", "Mushroom_atk.mp3",
-           "Player_Death.wav", "Player_Hit.wav", "jump.wav", "bee.mp3",
-           "Player_Death.mp3", "Player_Hit.mp3", "jump.mp3"
-       };
+        std::vector<std::string> sfxFiles = {
+            "Bee_Sting.mp3", "Blade_swing_01.mp3", "Blade_swing_02.mp3", "Blade_swing_03.mp3",
+            "Fireball_explosion.mp3", "Fireball_fly.mp3", "Mob_hit.mp3", "Mushroom_atk.mp3",
+            "Player_Death.wav", "Player_Hit.wav", "jump.wav", "bee.mp3",
+            "Player_Death.mp3", "Player_Hit.mp3", "jump.mp3", "Heal.wav"
+        };
        for (const auto& f : sfxFiles) {
            std::string path = GetAssetPath(BasePathAudio + f);
            Mix_Chunk* chunk = Mix_LoadWAV(path.c_str());
