@@ -58,7 +58,11 @@ namespace JanSordid::SDL_Example
             lastHitTime = now;
         }
 
-        Mix_VolumeChunk(_sfx[name], GlobalSettings::sfxVolume);
+        int sfxVol = GlobalSettings::sfxVolume;
+        if (name == "Mob_hit.mp3") {
+            sfxVol = std::min(128, (int)(sfxVol * 1.5f));
+        }
+        Mix_VolumeChunk(_sfx[name], sfxVol);
 
         int channel = Mix_PlayChannel(-1, _sfx[name], loops);
 
@@ -71,6 +75,11 @@ namespace JanSordid::SDL_Example
         if (name == "bee.mp3") {
             _beeChannel = channel;
         }
+    }
+
+    void EditorState::ShowFloatingText(const std::string& text, float seconds) {
+        _floatingText = text;
+        _floatingTextTimer = seconds;
     }
 
     void SaveMapToFile(const std::string& filename, const EditorState::WorldState& layers) {
@@ -315,13 +324,22 @@ namespace JanSordid::SDL_Example
                               std::vector<Fireball>& fireballs,
                               std::vector<EditorState::HealAnim>& heals,
                               EditorState* state)
-        {
-            switch (res) {
-                case FD::Magic::MagicResult::Fireball:
-                    SDL_Log(">>> CAST: FIREBALL <<<");
-                    state->PlaySFX("Fireball_fly.mp3", 0);
-                    SpawnFireball(fireballs, player);
-                    break;
+            {
+                switch (res) {
+                    case FD::Magic::MagicResult::Fireball:
+                        SDL_Log(">>> CAST: FIREBALL <<<");
+                        {
+                            constexpr int kExtraManaCost = 20;
+                            if (player.mana < kExtraManaCost) {
+                                SDL_Log(">>> CAST: FIREBALL FEHLGESCHLAGEN (zu wenig Mana) <<<");
+                                if (state) state->ShowFloatingText("Mana low", 2.0f);
+                                break;
+                            }
+                            player.mana -= kExtraManaCost;
+                        }
+                        state->PlaySFX("Fireball_fly.mp3", 0);
+                        SpawnFireball(fireballs, player);
+                        break;
                 case FD::Magic::MagicResult::Heal:
                     SDL_Log(">>> CAST: HEAL <<<");
                     player.hp = std::min(player.hp + 25, player.maxHp);
@@ -544,8 +562,15 @@ namespace JanSordid::SDL_Example
 
     bool EditorState::Input( const Event & evt ) {
        const char* defaultPath = "asset\\map\\";
-       if (evt.type == SDL_EVENT_KEY_DOWN) {
-           if (evt.key.scancode == SDL_SCANCODE_ESCAPE) { _game.ReplaceState( (u8)GameStateID::MainMenu ); return true; }
+        if (evt.type == SDL_EVENT_KEY_DOWN) {
+           if (evt.key.scancode == SDL_SCANCODE_ESCAPE) {
+               if (_beeChannel != -1) {
+                   Mix_HaltChannel(_beeChannel);
+                   _beeChannel = -1;
+               }
+               _game.ReplaceState( (u8)GameStateID::MainMenu );
+               return true;
+           }
            if (GlobalSettings::isEditorMode) {
                if (evt.key.scancode == SDL_SCANCODE_TAB && evt.key.repeat == 0) _showPalette = !_showPalette;
                if (evt.key.scancode == SDL_SCANCODE_F8) SDL_ShowSaveFileDialog(OnMapSave, _currState, window(), nullptr, 0, defaultPath);
@@ -759,6 +784,37 @@ namespace JanSordid::SDL_Example
 
                 if (_player.hp <= 0) return;
 
+                constexpr int kFireballDamage = 20;
+                constexpr float kExplosionRadius = 100.0f;
+                auto ApplyExplosionDamage = [&](const FPoint& center, Bee* ignoreBee, Mushroom* ignoreMushroom) {
+                    const float r2 = kExplosionRadius * kExplosionRadius;
+                    for (auto& b : _bees) {
+                        if (b.state == BeeState::Dead) continue;
+                        if (&b == ignoreBee) continue;
+                        if (b.z >= 40) continue;
+                        FRect box = b.GetHitbox();
+                        const float cx = box.x + (box.w * 0.5f);
+                        const float cy = box.y + (box.h * 0.5f);
+                        const float dx = cx - center.x;
+                        const float dy = cy - center.y;
+                        if ((dx * dx + dy * dy) <= r2) {
+                            b.TakeDamage(kFireballDamage);
+                        }
+                    }
+                    for (auto& m : _mushrooms) {
+                        if (m.state == MushroomState::Dead) continue;
+                        if (&m == ignoreMushroom) continue;
+                        FRect box = m.GetHitbox();
+                        const float cx = box.x + (box.w * 0.5f);
+                        const float cy = box.y + (box.h * 0.5f);
+                        const float dx = cx - center.x;
+                        const float dy = cy - center.y;
+                        if ((dx * dx + dy * dy) <= r2) {
+                            m.TakeDamage(kFireballDamage);
+                        }
+                    }
+                };
+
                 for (auto& f : _fireballs) {
                     if (!f.alive) continue;
                     f.lifetime -= deltaT;
@@ -776,7 +832,8 @@ namespace JanSordid::SDL_Example
                         if (bee.state == BeeState::Dead) continue;
                         FRect beeBox = bee.GetHitbox();
                         if (SDL_HasRectIntersectionFloat(&fbBox, &beeBox)) {
-                            bee.TakeDamage(20);
+                            bee.TakeDamage(kFireballDamage);
+                            ApplyExplosionDamage(f.pos, &bee, nullptr);
                             PlaySFX("Fireball_explosion.mp3", 0);
                             SpawnExplosion(_explosions, f.pos);
                             f.alive = false;
@@ -788,7 +845,8 @@ namespace JanSordid::SDL_Example
                             if (mushroom.state == MushroomState::Dead) continue;
                             FRect mushBox = mushroom.GetHitbox();
                             if (SDL_HasRectIntersectionFloat(&fbBox, &mushBox)) {
-                                mushroom.TakeDamage(20);
+                                mushroom.TakeDamage(kFireballDamage);
+                                ApplyExplosionDamage(f.pos, nullptr, &mushroom);
                                 PlaySFX("Fireball_explosion.mp3", 0);
                                 SpawnExplosion(_explosions, f.pos);
                                 f.alive = false;
@@ -813,21 +871,30 @@ namespace JanSordid::SDL_Example
                 }
                 _heals.erase(std::remove_if(_heals.begin(), _heals.end(), [](const auto& h) { return !h.alive; }), _heals.end());
 
+                if (_player.isAttacking && !_wasAttacking) _hitSfxThisSwing = false;
+                _wasAttacking = _player.isAttacking;
+                if (_floatingTextTimer > 0.0f) _floatingTextTimer -= deltaT;
+
                 if (_player.isAttacking && _player.currentFrame >= 2 && _player.currentFrame <= 4) {
+                    bool hitSomething = false;
                     FRect swordBox = _player.GetAttackHitbox();
                     for (auto& bee : _bees) {
                         if (bee.state == BeeState::Dead) continue;
                         FRect beeBox = bee.GetHitbox();
                         if (SDL_HasRectIntersectionFloat(&swordBox, &beeBox)) {
-                            if (bee.z < 40) { bee.TakeDamage(10); PlaySFX("Mob_hit.mp3", 0); }
+                            if (bee.z < 40) { bee.TakeDamage(10); hitSomething = true; }
                         }
                     }
                     for (auto& mushroom : _mushrooms) {
                         if (mushroom.state == MushroomState::Dead) continue;
                         FRect mushBox = mushroom.GetHitbox();
                         if (SDL_HasRectIntersectionFloat(&swordBox, &mushBox)) {
-                            mushroom.TakeDamage(10); PlaySFX("Mob_hit.mp3", 0);
+                            mushroom.TakeDamage(10); hitSomething = true;
                         }
+                    }
+                    if (hitSomething && !_hitSfxThisSwing) {
+                        PlaySFX("Mob_hit.mp3", 0);
+                        _hitSfxThisSwing = true;
                     }
                     if (SDL_HasRectIntersectionFloat(&swordBox, &_chestHitbox)) {
                         SDL_Log("Kiste getroffen (Schwert)!");
@@ -985,14 +1052,28 @@ namespace JanSordid::SDL_Example
                SDL_RenderTexture(renderer(), _uiHpFill.get(), &hpSrc, &hpDst);
                SDL_RenderTexture(renderer(), _uiManaFill.get(), &manaSrc, &manaDst);
            }
-           if (_levelFinished && _font) {
-               Owned<Surface> s(TTF_RenderText_Blended(_font.get(), "LEVEL GESCHAFFT!", 0, {255, 215, 0, 255}));
-               if(s) {
-                   Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
-                   FRect r = { (winW/2.0f) - (s->w/2.0f), (winH/2.0f) - (s->h/2.0f), (f32)s->w, (f32)s->h };
-                   SDL_RenderTexture(renderer(), t.get(), EntireFRect, &r);
-               }
-           }
+            if (_levelFinished && _font) {
+                Owned<Surface> s(TTF_RenderText_Blended(_font.get(), "LEVEL GESCHAFFT!", 0, {255, 215, 0, 255}));
+                if(s) {
+                    Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
+                    FRect r = { (winW/2.0f) - (s->w/2.0f), (winH/2.0f) - (s->h/2.0f), (f32)s->w, (f32)s->h };
+                    SDL_RenderTexture(renderer(), t.get(), EntireFRect, &r);
+                }
+            }
+            if (_floatingTextTimer > 0.0f && _font && !_floatingText.empty()) {
+                Owned<Surface> s(TTF_RenderText_Blended(_font.get(), _floatingText.c_str(), 0, {255, 255, 255, 255}));
+                if (s) {
+                    Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
+                    const float x = (_player.position.x * _mapScale) + _camera.x - (s->w * 0.5f);
+                    const float y = (_player.position.y * _mapScale) + _camera.y - (_player.z * _mapScale) - (s->h + 30.0f);
+                    FRect rShadow = { x + 2.0f, y + 2.0f, (f32)s->w, (f32)s->h };
+                    FRect rText = { x, y, (f32)s->w, (f32)s->h };
+                    SDL_SetTextureColorMod(t.get(), 0, 0, 0);
+                    SDL_RenderTexture(renderer(), t.get(), EntireFRect, &rShadow);
+                    SDL_SetTextureColorMod(t.get(), 255, 255, 255);
+                    SDL_RenderTexture(renderer(), t.get(), EntireFRect, &rText);
+                }
+            }
        }
 
        if(GlobalSettings::isEditorMode) {
@@ -1074,6 +1155,7 @@ namespace JanSordid::SDL_Example
     }
 
     void MainMenuState::Init() {
+        Mix_HaltChannel(-1); // stop lingering SFX (e.g. bee loop) when entering menu
         std::string fontP = GetAssetPath(BasePathFont "RobotoSlab-Bold.ttf");
         if (!_fontTitle) _fontTitle.reset(TTF_OpenFont(fontP.c_str(), 60));
         if (!_fontMenu)  _fontMenu.reset(TTF_OpenFont(fontP.c_str(), 30));

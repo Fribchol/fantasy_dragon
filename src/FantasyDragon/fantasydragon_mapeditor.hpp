@@ -133,6 +133,7 @@ namespace JanSordid::SDL_Example
         void Render( u64 framesSinceStart, Duration timeSinceStart, f32 deltaTNeeded ) override;
         constexpr Color clearColor() const noexcept override { return Color{ 100, 100, 100, 255 }; }
         void LoadMapFromFileAndRebuild(const char* path);
+        void ShowFloatingText(const std::string& text, float seconds = 2.0f);
 
         void PlaySFX(const std::string& name, int loops = 0);
 
@@ -193,6 +194,8 @@ namespace JanSordid::SDL_Example
         bool   _isPanning    = false;
         bool   _showGrid     = false;
         bool   _showPalette  = false;
+        bool   _wasAttacking = false;
+        bool   _hitSfxThisSwing = false;
 
         constexpr static Duration UpdateDeltaTime = 16ms;
         Duration _nextUpdateTime = {};
@@ -201,6 +204,8 @@ namespace JanSordid::SDL_Example
         bool _levelFinished = false;
         float _finishTimer = 0.0f;
         float _manaRegenAccu = 0.0f;
+        std::string _floatingText;
+        float _floatingTextTimer = 0.0f;
 
         void ResetLevel();
     };
