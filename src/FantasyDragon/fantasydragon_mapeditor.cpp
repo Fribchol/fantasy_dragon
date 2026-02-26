@@ -365,7 +365,6 @@ namespace JanSordid::SDL_Example
     }
 
     void EditorState::Init() {
-       int echteBreite = (int)(*_currState)[0][0].size();
        SDL_Log("--- INIT STATE ---");
 
        Mix_AllocateChannels(32);
@@ -426,6 +425,8 @@ namespace JanSordid::SDL_Example
 
        if (!GlobalSettings::isEditorMode) {
            _player.Init(renderer());
+           SDL_HideCursor();
+           SDL_SetWindowRelativeMouseMode(window(), true);
 
            _bees.clear();
            _mushrooms.clear();
@@ -456,7 +457,7 @@ namespace JanSordid::SDL_Example
            SpawnMushroom(6600.0f, 240.0f);
 
            int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-           _magic.SetCanvasRect((winW - 256) / 2, (winH - 256) / 2, 256, 256);
+           _magic.SetCanvasRect((float)(winW - 256) / 2.0f, (float)(winH - 256) / 2.0f, 256.0f, 256.0f);
 
            std::string templateFolder = FindTemplateFolderString();
            namespace fs = std::filesystem;
@@ -465,6 +466,8 @@ namespace JanSordid::SDL_Example
            }
            _mapScale = 2;
        } else {
+           SDL_ShowCursor();
+           SDL_SetWindowRelativeMouseMode(window(), false);
            _mapScale = 2;
        }
 
@@ -559,6 +562,8 @@ namespace JanSordid::SDL_Example
             Mix_FreeChunk(pair.second);
         }
         _sfx.clear();
+        SDL_ShowCursor();
+        SDL_SetWindowRelativeMouseMode(window(), false);
     }
 
     bool EditorState::Input( const Event & evt ) {
@@ -569,6 +574,8 @@ namespace JanSordid::SDL_Example
                    Mix_HaltChannel(_beeChannel);
                    _beeChannel = -1;
                }
+               SDL_ShowCursor();
+               SDL_SetWindowRelativeMouseMode(window(), false);
                _game.ReplaceState( (u8)GameStateID::MainMenu );
                return true;
            }
@@ -609,7 +616,7 @@ namespace JanSordid::SDL_Example
                 int r = rand() % 3;
                 if (r == 0) PlaySFX("Blade_swing_01.mp3", 0);
                 else if (r == 1) PlaySFX("Blade_swing_02.mp3", 0);
-                else PlaySFX("Blade_swing_03.mp3", 0);
+                else if (r == 2) PlaySFX("Blade_swing_03.mp3", 0);
             }
 
             if (_magic.IsActive()) {
@@ -708,39 +715,53 @@ namespace JanSordid::SDL_Example
 
     void EditorState::Update( u64, Duration, f32 deltaT ) {
         if (!GlobalSettings::isEditorMode) {
-            if (_levelFinished) {
-                _finishTimer += deltaT;
-                if (_finishTimer > 3.0f) {
-                    _game.ReplaceState((u8)GameStateID::MainMenu);
-                }
-                return;
-            }
 
-            int winW, winH;
-            SDL_GetWindowSize(window(), &winW, &winH);
-            bool beeVisible = false;
-            for (const auto& b : _bees) {
-                if (b.state == BeeState::Dead) continue;
-                float screenX = b.position.x * _mapScale + _camera.x;
-                if (screenX > -50.0f && screenX < (float)winW + 50.0f) {
-                    beeVisible = true;
-                    break;
-                }
-            }
-
-            if (beeVisible) {
-                if (_beeChannel == -1 || Mix_Playing(_beeChannel) == 0) {
-                    PlaySFX("bee.mp3", -1);
-                }
+            if (_magic.IsActive()) {
+                SDL_ShowCursor();
+                SDL_SetWindowRelativeMouseMode(window(), false);
+                _magic.Update(deltaT);
             } else {
-                if (_beeChannel != -1) {
-                    Mix_HaltChannel(_beeChannel);
-                    _beeChannel = -1;
-                }
-            }
+                SDL_HideCursor();
+                SDL_SetWindowRelativeMouseMode(window(), true);
 
-            if (_magic.IsActive()) { _magic.Update(deltaT); }
-            else {
+                if (_levelFinished) {
+                    SDL_ShowCursor();
+                    SDL_SetWindowRelativeMouseMode(window(), false);
+                    _finishTimer += deltaT;
+                    if (_finishTimer > 3.0f) {
+                        if (_currentGameMapPath.find("map V2.0") != std::string::npos) {
+                            _currentGameMapPath = "asset/map/map V3.0";
+                            ResetLevel();
+                        } else {
+                            _game.ReplaceState((u8)GameStateID::MainMenu);
+                        }
+                    }
+                    return;
+                }
+
+                int winW, winH;
+                SDL_GetWindowSize(window(), &winW, &winH);
+                bool beeVisible = false;
+                for (const auto& b : _bees) {
+                    if (b.state == BeeState::Dead) continue;
+                    float screenX = b.position.x * (float)_mapScale + _camera.x;
+                    if (screenX > -50.0f && screenX < (float)winW + 50.0f) {
+                        beeVisible = true;
+                        break;
+                    }
+                }
+
+                if (beeVisible) {
+                    if (_beeChannel == -1 || Mix_Playing(_beeChannel) == 0) {
+                        PlaySFX("bee.mp3", -1);
+                    }
+                } else {
+                    if (_beeChannel != -1) {
+                        Mix_HaltChannel(_beeChannel);
+                        _beeChannel = -1;
+                    }
+                }
+
                 if (_player.mana < _player.maxMana) {
                     _manaRegenAccu += deltaT;
                     while (_manaRegenAccu >= 1.0f && _player.mana < _player.maxMana) {
@@ -752,7 +773,6 @@ namespace JanSordid::SDL_Example
                 }
 
                 int oldHp = _player.hp;
-
                 _player.Update(deltaT, *_currState);
 
                 if (_player.IsDeathAnimFinished()) {
@@ -902,13 +922,16 @@ namespace JanSordid::SDL_Example
                         if (AreAllEnemiesDead(_bees, _mushrooms)) _levelFinished = true;
                     }
                 }
-                float targetCamX = -((_player.position.x * _mapScale) - (winW / 2.0f));
-                float targetCamY = -((_player.position.y * _mapScale) - (winH / 2.0f));
+                float targetCamX = -((_player.position.x * (float)_mapScale) - ((float)winW / 2.0f));
+                float targetCamY = -((_player.position.y * (float)_mapScale) - ((float)winH / 2.0f));
                 _camera.x += (targetCamX - _camera.x) * 5.0f * deltaT;
                 _camera.y += (targetCamY - _camera.y) * 5.0f * deltaT;
             }
             auto res = _magic.ConsumeResult();
             if (res != FD::Magic::MagicResult::None) ApplyMagicResult(res, _player, _bees, _fireballs, _heals, this);
+        } else {
+            SDL_ShowCursor();
+            SDL_SetWindowRelativeMouseMode(window(), false);
         }
     }
 
@@ -935,7 +958,7 @@ namespace JanSordid::SDL_Example
              if (idx & kFlipH) flip = (SDL_FlipMode)(flip | SDL_FLIP_HORIZONTAL);
              if (idx & kFlipV) flip = (SDL_FlipMode)(flip | SDL_FLIP_VERTICAL);
              const float angle = (float)(((idx & kRotMask) >> kRotShift) * 90);
-             SDL_RenderTextureRotated( renderer(), _tileSet.get(), &srcR, &dstR, angle, nullptr, flip );
+             SDL_RenderTextureRotated( renderer(), _tileSet.get(), &srcR, &dstR, (double)angle, nullptr, flip );
           }
        }
        if(GlobalSettings::isEditorMode) SDL_SetTextureAlphaMod(_tileSet.get(), 255);
@@ -954,15 +977,15 @@ namespace JanSordid::SDL_Example
                if (idx & kFlipH) flip = (SDL_FlipMode)(flip | SDL_FLIP_HORIZONTAL);
                if (idx & kFlipV) flip = (SDL_FlipMode)(flip | SDL_FLIP_VERTICAL);
                const float angle = (float)(((idx & kRotMask) >> kRotShift) * 90);
-               SDL_RenderTextureRotated( renderer(), _tileSet.get(), &srcR, &dstR, angle, nullptr, flip );
+               SDL_RenderTextureRotated( renderer(), _tileSet.get(), &srcR, &dstR, (double)angle, nullptr, flip );
           }
           if(GlobalSettings::isEditorMode) SDL_SetTextureAlphaMod(_tileSet.get(), 255);
           if (!GlobalSettings::isEditorMode) {
               float playerFootY = _player.position.y + _player.size.y;
               int playerTileRow = (int)(playerFootY / 16.0f);
-              if (playerTileRow == (int)y) _player.Render(renderer(), _camera, _mapScale, healActive);
-              for (auto& bee : _bees) if ((int)((bee.position.y + 16.0f) / 16.0f) == (int)y) bee.Render(renderer(), _camera, _mapScale);
-              for (auto& mushroom : _mushrooms) if ((int)(mushroom.position.y / 16.0f) == (int)y) mushroom.Render(renderer(), _camera, _mapScale);
+              if (playerTileRow == (int)y) _player.Render(renderer(), _camera, (float)_mapScale, healActive);
+              for (auto& bee : _bees) if ((int)((bee.position.y + 16.0f) / 16.0f) == (int)y) bee.Render(renderer(), _camera, (float)_mapScale);
+              for (auto& mushroom : _mushrooms) if ((int)(mushroom.position.y / 16.0f) == (int)y) mushroom.Render(renderer(), _camera, (float)_mapScale);
           }
        }
 
@@ -980,7 +1003,7 @@ namespace JanSordid::SDL_Example
                if (idx & kFlipH) flip = (SDL_FlipMode)(flip | SDL_FLIP_HORIZONTAL);
                if (idx & kFlipV) flip = (SDL_FlipMode)(flip | SDL_FLIP_VERTICAL);
                const float angle = (float)(((idx & kRotMask) >> kRotShift) * 90);
-               SDL_RenderTextureRotated( renderer(), _tileSet.get(), &srcR, &dstR, angle, nullptr, flip );
+               SDL_RenderTextureRotated( renderer(), _tileSet.get(), &srcR, &dstR, (double)angle, nullptr, flip );
           }
        }
        if(GlobalSettings::isEditorMode) SDL_SetTextureAlphaMod(_tileSet.get(), 255);
@@ -990,15 +1013,15 @@ namespace JanSordid::SDL_Example
                float frameW = 0.0f, frameH = 0.0f; float fillW = 0.0f, fillH = 0.0f;
                SDL_GetTextureSize(_enemyHpFrame.get(), &frameW, &frameH);
                SDL_GetTextureSize(_enemyHpFill.get(), &fillW, &fillH);
-               const float uiScale = 0.6f;
+               const float uiEnemyScale = 0.6f;
                for (const auto& bee : _bees) {
                    if (bee.state == BeeState::Dead) continue;
                    const float hpRatio = std::clamp((float)bee.hp / (float)bee.maxHp, 0.0f, 1.0f);
                    const float centerX = (bee.position.x + (bee.size.x * 0.5f)) * (float)_mapScale + _camera.x;
                    const float topY = (bee.position.y * (float)_mapScale) + _camera.y - (bee.z * (float)_mapScale) - 18.0f;
-                   FRect frameDst = { centerX - (frameW * uiScale * 0.5f), topY - (frameH * uiScale), frameW * uiScale, frameH * uiScale };
+                   FRect frameDst = { centerX - (frameW * uiEnemyScale * 0.5f), topY - (frameH * uiEnemyScale), frameW * uiEnemyScale, frameH * uiEnemyScale };
                    SDL_FRect fillSrc = { 0.0f, 0.0f, fillW * hpRatio, fillH };
-                   SDL_FRect fillDst = { frameDst.x + (frameDst.w - fillW * uiScale) * 0.5f, frameDst.y + (frameDst.h - fillH * uiScale) * 0.5f, fillW * uiScale * hpRatio, fillH * uiScale };
+                   SDL_FRect fillDst = { frameDst.x + (frameDst.w - fillW * uiEnemyScale) * 0.5f, frameDst.y + (frameDst.h - fillH * uiEnemyScale) * 0.5f, fillW * uiEnemyScale * hpRatio, fillH * uiEnemyScale };
                    SDL_RenderTexture(renderer(), _enemyHpFrame.get(), nullptr, &frameDst);
                    SDL_RenderTexture(renderer(), _enemyHpFill.get(), &fillSrc, &fillDst);
                }
@@ -1007,9 +1030,9 @@ namespace JanSordid::SDL_Example
                    const float hpRatio = std::clamp((float)mushroom.hp / (float)mushroom.maxHp, 0.0f, 1.0f);
                    const float centerX = (mushroom.position.x * (float)_mapScale) + _camera.x;
                    const float topY = ((mushroom.position.y - mushroom.frameH) * (float)_mapScale) + _camera.y - (mushroom.z * (float)_mapScale) - 2.0f;
-                   FRect frameDst = { centerX - (frameW * uiScale * 0.5f), topY - (frameH * uiScale), frameW * uiScale, frameH * uiScale };
+                   FRect frameDst = { centerX - (frameW * uiEnemyScale * 0.5f), topY - (frameH * uiEnemyScale), frameW * uiEnemyScale, frameH * uiEnemyScale };
                    SDL_FRect fillSrc = { 0.0f, 0.0f, fillW * hpRatio, fillH };
-                   SDL_FRect fillDst = { frameDst.x + (frameDst.w - fillW * uiScale) * 0.5f, frameDst.y + (frameDst.h - fillH * uiScale) * 0.5f, fillW * uiScale * hpRatio, fillH * uiScale };
+                   SDL_FRect fillDst = { frameDst.x + (frameDst.w - fillW * uiEnemyScale) * 0.5f, frameDst.y + (frameDst.h - fillH * uiEnemyScale) * 0.5f, fillW * uiEnemyScale * hpRatio, fillH * uiEnemyScale };
                    SDL_RenderTexture(renderer(), _enemyHpFrame.get(), nullptr, &frameDst);
                    SDL_RenderTexture(renderer(), _enemyHpFill.get(), &fillSrc, &fillDst);
                }
@@ -1017,11 +1040,11 @@ namespace JanSordid::SDL_Example
 
            for (const auto& f : _fireballs) {
                if (!f.alive) continue;
-               const float dist = std::sqrt(std::pow(f.pos.x - f.startPos.x, 2) + std::pow(f.pos.y - f.startPos.y, 2));
+               const float dist = std::sqrt(std::pow(f.pos.x - f.startPos.x, 2.0f) + std::pow(f.pos.y - f.startPos.y, 2.0f));
                const int frame = std::min((int)((dist / 200.0f) * 15.0f), 14);
                JanSordid::SDL::FRect src = { (float)(frame * 16), 0.0f, 16.0f, 16.0f };
                JanSordid::SDL::FRect dst = { (f.pos.x * (float)_mapScale) + _camera.x - (16.0f * (float)_mapScale * 0.5f), (f.pos.y * (float)_mapScale) + _camera.y - (16.0f * (float)_mapScale * 0.5f), 16.0f * (float)_mapScale, 16.0f * (float)_mapScale };
-               SDL_RenderTextureRotated(renderer(), _texFireball.get(), &src, &dst, std::atan2(f.vel.y, f.vel.x) * (180.0 / M_PI), nullptr, SDL_FLIP_NONE);
+               SDL_RenderTextureRotated(renderer(), _texFireball.get(), &src, &dst, std::atan2((double)f.vel.y, (double)f.vel.x) * (180.0 / M_PI), nullptr, SDL_FLIP_NONE);
            }
            for (const auto& e : _explosions) {
                if (!e.alive) continue;
@@ -1039,25 +1062,39 @@ namespace JanSordid::SDL_Example
            }
 
            int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-           FD::Magic::MagicDebugRender::RenderOverlay(renderer(), _magic, winW, winH, _debugTemplate);
+           FD::Magic::MagicDebugRender::RenderOverlay(renderer(), _magic, (float)winW, (float)winH, _debugTemplate);
+
            if (_uiFrame && _uiHpFill && _uiManaFill) {
-               float frameW, frameH; SDL_GetTextureSize(_uiFrame.get(), &frameW, &frameH);
-               float uiScale = 2.0f; FRect frameDst = { 16.0f, (float)winH - 16.0f - frameH * uiScale, frameW * uiScale, frameH * uiScale };
+               float fW, fH; SDL_GetTextureSize(_uiFrame.get(), &fW, &fH);
+               float uiScale = 2.0f; FRect frameDst = { 16.0f, (float)winH - 16.0f - fH * uiScale, fW * uiScale, fH * uiScale };
                float hpW, hpH; SDL_GetTextureSize(_uiHpFill.get(), &hpW, &hpH);
                float manaW, manaH; SDL_GetTextureSize(_uiManaFill.get(), &manaW, &manaH);
                SDL_FRect hpSrc = { 0.0f, 0.0f, hpW * std::clamp((float)_player.hp / (float)_player.maxHp, 0.0f, 1.0f), hpH };
                SDL_FRect hpDst = { frameDst.x + (30.0f * uiScale) + 105.0f, frameDst.y + (30.0f * uiScale), (hpW * uiScale) * hpSrc.w / hpW, hpH * uiScale };
                SDL_FRect manaSrc = { 0.0f, 0.0f, manaW * std::clamp((float)_player.mana / (float)_player.maxMana, 0.0f, 1.0f), manaH };
                SDL_FRect manaDst = { frameDst.x + (30.0f * uiScale) + 110.0f, frameDst.y + (50.0f * uiScale), (manaW * uiScale) * manaSrc.w / manaW, manaH * uiScale };
+
                SDL_RenderTexture(renderer(), _uiFrame.get(), nullptr, &frameDst);
                SDL_RenderTexture(renderer(), _uiHpFill.get(), &hpSrc, &hpDst);
                SDL_RenderTexture(renderer(), _uiManaFill.get(), &manaSrc, &manaDst);
+
+               float uiPlayerScale = 3.0f;
+               float circleOffsetX = 55.0f * uiScale;
+               float circleOffsetY = (fH * 0.75f * uiScale);
+               float circleCenterX = frameDst.x + circleOffsetX;
+               float circleCenterY = frameDst.y + circleOffsetY;
+
+               FPoint fakeCam;
+               fakeCam.x = circleCenterX - (_player.position.x * uiPlayerScale) - ((_player.size.x * uiPlayerScale) * 0.5f);
+               fakeCam.y = circleCenterY - (_player.position.y * uiPlayerScale) - ((_player.size.y * uiPlayerScale) * 0.5f) + (_player.z * uiPlayerScale);
+               _player.Render(renderer(), fakeCam, uiPlayerScale, false);
            }
+
             if (_levelFinished && _font) {
                 Owned<Surface> s(TTF_RenderText_Blended(_font.get(), "LEVEL GESCHAFFT!", 0, {255, 215, 0, 255}));
                 if(s) {
                     Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
-                    FRect r = { (winW/2.0f) - (s->w/2.0f), (winH/2.0f) - (s->h/2.0f), (f32)s->w, (f32)s->h };
+                    FRect r = { ((float)winW/2.0f) - ((float)s->w/2.0f), ((float)winH/2.0f) - ((float)s->h/2.0f), (f32)s->w, (f32)s->h };
                     SDL_RenderTexture(renderer(), t.get(), EntireFRect, &r);
                 }
             }
@@ -1065,8 +1102,8 @@ namespace JanSordid::SDL_Example
                 Owned<Surface> s(TTF_RenderText_Blended(_font.get(), _floatingText.c_str(), 0, {255, 255, 255, 255}));
                 if (s) {
                     Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
-                    const float x = (_player.position.x * _mapScale) + _camera.x - (s->w * 0.5f);
-                    const float y = (_player.position.y * _mapScale) + _camera.y - (_player.z * _mapScale) - (s->h + 30.0f);
+                    const float x = (_player.position.x * (float)_mapScale) + _camera.x - ((float)s->w * 0.5f);
+                    const float y = (_player.position.y * (float)_mapScale) + _camera.y - (_player.z * (float)_mapScale) - ((float)s->h + 30.0f);
                     FRect rShadow = { x + 2.0f, y + 2.0f, (f32)s->w, (f32)s->h };
                     FRect rText = { x, y, (f32)s->w, (f32)s->h };
                     SDL_SetTextureColorMod(t.get(), 0, 0, 0);
@@ -1101,17 +1138,16 @@ namespace JanSordid::SDL_Example
                        for(int px = 0; px < effW; ++px) {
                            int srcRX = 0, srcRY = 0;
                            MapSelectionToSource(px, py, _pickedSize.x, _pickedSize.y, _rotSteps, _flipH, _flipV, srcRX, srcRY);
-                           const int srcX = _pickedIdx.x + srcRX;
-                           const int srcY = _pickedIdx.y + srcRY;
-                           if (srcX < _tileCount.x && srcY < _tileCount.y) {
-                               FRect srcR = toFRect( toF(Point{srcX, srcY} * _tileSize), toF(_tileSize) );
+                           const int localSrcX = _pickedIdx.x + srcRX;
+                           const int localSrcY = _pickedIdx.y + srcRY;
+                           if (localSrcX < _tileCount.x && localSrcY < _tileCount.y) {
+                               FRect srcR = toFRect( toF(Point{localSrcX, localSrcY} * _tileSize), toF(_tileSize) );
                                FRect dstR = toFRect( FPoint{(f32)(p.x + px), (f32)(p.y + py)} * mapTS + _camera, mapTS );
                                SDL_FlipMode flip = SDL_FLIP_NONE;
                                if (_flipH) flip = (SDL_FlipMode)(flip | SDL_FLIP_HORIZONTAL);
                                if (_flipV) flip = (SDL_FlipMode)(flip | SDL_FLIP_VERTICAL);
                                const int tileRot = (_rotSteps + ((_rotSteps & 1) ? 2 : 0)) & 3;
-                               const float angle = (float)(tileRot * 90);
-                               SDL_RenderTextureRotated( renderer(), _tileSet.get(), &srcR, &dstR, angle, nullptr, flip );
+                               SDL_RenderTextureRotated( renderer(), _tileSet.get(), &srcR, &dstR, (double)(tileRot * 90), nullptr, flip );
                            }
                        }
                    }
@@ -1156,7 +1192,10 @@ namespace JanSordid::SDL_Example
     }
 
     void MainMenuState::Init() {
-        Mix_HaltChannel(-1); // stop lingering SFX (e.g. bee loop) when entering menu
+        SDL_ShowCursor();
+        SDL_SetWindowRelativeMouseMode(window(), false);
+
+        Mix_HaltChannel(-1);
         std::string fontP = GetAssetPath(BasePathFont "RobotoSlab-Bold.ttf");
         if (!_fontTitle) _fontTitle.reset(TTF_OpenFont(fontP.c_str(), 60));
         if (!_fontMenu)  _fontMenu.reset(TTF_OpenFont(fontP.c_str(), 30));
@@ -1166,16 +1205,15 @@ namespace JanSordid::SDL_Example
         std::ifstream f(musicP);
         if (f.good()) {
             _bgMusic = Mix_LoadMUS(musicP.c_str());
-            if (_bgMusic) { Mix_VolumeMusic(GlobalSettings::musicVolume); Mix_PlayMusic(_bgMusic, -1); SDL_Log("Musik gestartet: %s", musicP.c_str()); }
-            else { SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Musik konnte nicht geladen werden (falsches Format?): %s", SDL_GetError()); }
-        } else { SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Musikdatei nicht gefunden: %s", musicP.c_str()); }
+            if (_bgMusic) { Mix_VolumeMusic(GlobalSettings::musicVolume); Mix_PlayMusic(_bgMusic, -1); }
+        }
     }
     void MainMenuState::Destroy() { if (_bgMusic) { Mix_HaltMusic(); Mix_FreeMusic(_bgMusic); _bgMusic = nullptr; } }
     bool MainMenuState::DrawButton(const char* text, float y, float mouseX, float mouseY, bool isClicked) {
         Color c = { 200, 200, 200, 255 }; bool hovered = false; int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
         Owned<Surface> s(TTF_RenderText_Blended(_fontMenu.get(), text, 0, c));
         if (s) {
-            float w = (float)s->w; float h = (float)s->h; float x = (winW / 2.0f) - (w / 2.0f);
+            float w = (float)s->w; float h = (float)s->h; float x = ((float)winW / 2.0f) - (w / 2.0f);
             if (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h) { s.reset(TTF_RenderText_Blended(_fontMenu.get(), text, 0, {255, 255, 0, 255})); hovered = true; }
             Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
             FRect btnR = toFRect(FPoint{x, y}, FPoint{w, h});
@@ -1184,45 +1222,51 @@ namespace JanSordid::SDL_Example
         return hovered && isClicked;
     }
     bool MainMenuState::Input(const Event& event) {
-        const char* defaultPath = "asset\\map\\";
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
             float mx = (float)event.button.x; float my = (float)event.button.y;
             int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-            float centerY = winH / 2.0f; float spacing = 60.0f; float startY  = centerY - (4 * spacing) / 2.0f + 50.0f;
-            if (DrawButton("Spiel starten", startY, mx, my, true)) { SDL_ShowOpenFileDialog(OnSelectMapForGame, &_game, window(), nullptr, 0, defaultPath, false); }
+            float centerY = (float)winH / 2.0f; float spacing = 60.0f; float startY  = centerY - (4.0f * spacing) / 2.0f + 50.0f;
+
+            if (DrawButton("Spiel starten", startY, mx, my, true)) {
+                g_PendingGameMap = "asset/map/map V2.0";
+                GlobalSettings::isEditorMode = false;
+                _game.ReplaceState((u8)GameStateID::Editor);
+            }
             else if (DrawButton("Map Creator", startY + spacing, mx, my, true)) { GlobalSettings::isEditorMode = true; _game.ReplaceState((u8)GameStateID::Editor); }
-            else if (DrawButton("Settings", startY + spacing*2, mx, my, true)) _game.PushState((u8)GameStateID::Settings);
-            else if (DrawButton("Beenden", startY + spacing*3, mx, my, true)) { SDL_Event quit; quit.type = SDL_EVENT_QUIT; SDL_PushEvent(&quit); }
+            else if (DrawButton("Settings", startY + spacing*2.0f, mx, my, true)) _game.PushState((u8)GameStateID::Settings);
+            else if (DrawButton("Beenden", startY + spacing*3.0f, mx, my, true)) { SDL_Event quit; quit.type = SDL_EVENT_QUIT; SDL_PushEvent(&quit); }
         }
         return true;
     }
     void MainMenuState::Render(u64, Duration, f32) {
         int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
         if (_background) { SDL_RenderTexture(renderer(), _background.get(), nullptr, nullptr); } else { SDL_SetRenderDrawColor(renderer(), 30, 30, 40, 255); SDL_RenderClear(renderer()); }
-        Owned<Surface> s(TTF_RenderText_Blended(_fontTitle.get(), "FANTASY DRAGON", 0, {255, 255, 255, 255}));
+        Owned<Surface> s(TTF_RenderText_Blended(_fontTitle.get(), "", 0, {255, 255, 255, 255}));
         if(s) {
             Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get()));
-            float tx = (winW / 2.0f) - (s->w / 2.0f); FRect titleR = toFRect(FPoint{tx, winH * 0.15f}, FPoint{(f32)s->w, (f32)s->h});
+            float tx = ((float)winW / 2.0f) - ((float)s->w / 2.0f); FRect titleR = toFRect(FPoint{tx, (float)winH * 0.15f}, FPoint{(f32)s->w, (f32)s->h});
             SDL_RenderTexture(renderer(), t.get(), EntireFRect, &titleR);
         }
         float mx, my; SDL_GetMouseState(&mx, &my);
-        float centerY = winH / 2.0f; float spacing = 60.0f; float startY  = centerY - (4 * spacing) / 2.0f + 50.0f;
+        float centerY = (float)winH / 2.0f; float spacing = 60.0f; float startY  = centerY - (4.0f * spacing) / 2.0f + 50.0f;
         DrawButton("Spiel starten", startY, mx, my, false);
         DrawButton("Map Creator", startY + spacing, mx, my, false);
-        DrawButton("Settings",      startY + spacing*2, mx, my, false);
-        DrawButton("Beenden",       startY + spacing*3, mx, my, false);
+        DrawButton("Settings",      startY + spacing*2.0f, mx, my, false);
+        DrawButton("Beenden",       startY + spacing*3.0f, mx, my, false);
     }
 
     void SettingsState::Init() {
+        SDL_ShowCursor();
+        SDL_SetWindowRelativeMouseMode(window(), false);
         int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
         std::string fontP = GetAssetPath(BasePathFont "RobotoSlab-Bold.ttf"); if (!_font) _font.reset(TTF_OpenFont(fontP.c_str(), 30));
         std::string bgP = GetAssetPath(BasePathGraphic "menu_settings.png"); if (!_background) { auto* surf = IMG_Load(bgP.c_str()); if (surf) { _background.reset(SDL_CreateTextureFromSurface(renderer(), surf)); SDL_DestroySurface(surf); } }
     }
     bool SettingsState::DrawSlider(const char* label, float y, float mouseX, float mouseY, bool isMouseDown, int& volumeRef) {
         int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
-        float sliderWidth = 300.0f; float sliderHeight = 10.0f; float sliderX = (winW / 2.0f) - (sliderWidth / 2.0f); float sliderY = y + 40.0f;
+        float sliderWidth = 300.0f; float sliderHeight = 10.0f; float sliderX = ((float)winW / 2.0f) - (sliderWidth / 2.0f); float sliderY = y + 40.0f;
         Owned<Surface> s(TTF_RenderText_Blended(_font.get(), label, 0, {200, 200, 200, 255}));
-        if(s) { float tw = (float)s->w; float th = (float)s->h; FRect tRect = { (winW / 2.0f) - (tw/2.0f), y, tw, th }; Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get())); SDL_RenderTexture(renderer(), t.get(), nullptr, &tRect); }
+        if(s) { float tw = (float)s->w; float th = (float)s->h; FRect tRect = { ((float)winW / 2.0f) - (tw/2.0f), y, tw, th }; Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get())); SDL_RenderTexture(renderer(), t.get(), nullptr, &tRect); }
         FRect track = { sliderX, sliderY, sliderWidth, sliderHeight }; SDL_SetRenderDrawColor(renderer(), 100, 100, 100, 255); SDL_RenderFillRect(renderer(), &track);
         float pct = (float)volumeRef / 128.0f; float knobX = sliderX + (pct * sliderWidth); FRect knob = { knobX - 10.0f, sliderY - 5.0f, 20.0f, 20.0f }; SDL_SetRenderDrawColor(renderer(), 255, 200, 0, 255); SDL_RenderFillRect(renderer(), &knob);
         if (isMouseDown) {
@@ -1238,7 +1282,7 @@ namespace JanSordid::SDL_Example
         Color c = { 200, 200, 200, 255 }; bool hovered = false; int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
         Owned<Surface> s(TTF_RenderText_Blended(_font.get(), text, 0, c));
         if(s) {
-            float w = (float)s->w; float h = (float)s->h; float x = (winW / 2.0f) - (w / 2.0f);
+            float w = (float)s->w; float h = (float)s->h; float x = ((float)winW / 2.0f) - (w / 2.0f);
             if (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h) { s.reset(TTF_RenderText_Blended(_font.get(), text, 0, {255, 255, 0, 255})); hovered = true; }
             Owned<Texture> t(SDL_CreateTextureFromSurface(renderer(), s.get())); FRect btnR = toFRect(FPoint{x, y}, FPoint{w, h}); SDL_RenderTexture(renderer(), t.get(), EntireFRect, &btnR);
         }
@@ -1246,7 +1290,7 @@ namespace JanSordid::SDL_Example
     }
     bool SettingsState::Input(const Event& event) {
         float mx = 0, my = 0; SDL_GetMouseState(&mx, &my); bool isDown = (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK);
-        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH); float centerY = winH / 2.0f; float spacing = 80.0f; float startY = centerY - (4 * spacing) / 2.0f;
+        int winW, winH; SDL_GetWindowSize(window(), &winW, &winH); float centerY = (float)winH / 2.0f; float spacing = 80.0f; float startY = centerY - (4.0f * spacing) / 2.0f;
         if (isDown) {
             std::string musTxt = "Musik: " + std::to_string((int)((GlobalSettings::musicVolume / 128.0f) * 100)) + "%";
             if (DrawSlider(musTxt.c_str(), startY, mx, my, true, GlobalSettings::musicVolume)) {
@@ -1258,8 +1302,8 @@ namespace JanSordid::SDL_Example
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
             float clickX = (float)event.button.x; float clickY = (float)event.button.y;
             std::string screenText = std::string("Modus: ") + (GlobalSettings::isFullscreen ? "Vollbild" : "Fenster");
-            if (DrawButton(screenText.c_str(), startY + spacing*2, clickX, clickY, true)) { GlobalSettings::isFullscreen = !GlobalSettings::isFullscreen; SDL_SetWindowFullscreen(window(), GlobalSettings::isFullscreen ? SDL_WINDOW_FULLSCREEN : 0); }
-            if (DrawButton("Zurueck", startY + spacing*3, clickX, clickY, true)) _game.PopState();
+            if (DrawButton(screenText.c_str(), startY + spacing*2.0f, clickX, clickY, true)) { GlobalSettings::isFullscreen = !GlobalSettings::isFullscreen; SDL_SetWindowFullscreen(window(), GlobalSettings::isFullscreen ? SDL_WINDOW_FULLSCREEN : 0); }
+            if (DrawButton("Zurück", startY + spacing*3.0f, clickX, clickY, true)) _game.PopState();
         }
         if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE) _game.PopState();
         return true;
@@ -1267,10 +1311,10 @@ namespace JanSordid::SDL_Example
     void SettingsState::Render(u64, Duration, f32) {
         int winW, winH; SDL_GetWindowSize(window(), &winW, &winH);
         if (_background) { SDL_RenderTexture(renderer(), _background.get(), nullptr, nullptr); } else { SDL_SetRenderDrawColor(renderer(), 40, 30, 30, 255); SDL_RenderClear(renderer()); }
-        float mx, my; SDL_GetMouseState(&mx, &my); float centerY = winH / 2.0f; float spacing = 80.0f; float startY = centerY - (4 * spacing) / 2.0f;
+        float mx, my; SDL_GetMouseState(&mx, &my); float centerY = (float)winH / 2.0f; float spacing = 80.0f; float startY = centerY - (4.0f * spacing) / 2.0f;
         std::string musTxt = "Musik: " + std::to_string((int)((GlobalSettings::musicVolume / 128.0f) * 100)) + "%"; DrawSlider(musTxt.c_str(), startY, mx, my, false, GlobalSettings::musicVolume);
         std::string sfxTxt = "Sounds: " + std::to_string((int)((GlobalSettings::sfxVolume / 128.0f) * 100)) + "%"; DrawSlider(sfxTxt.c_str(), startY + spacing, mx, my, false, GlobalSettings::sfxVolume);
-        std::string screenText = std::string("Modus: ") + (GlobalSettings::isFullscreen ? "Vollbild" : "Fenster"); DrawButton(screenText.c_str(), startY + spacing*2, mx, my, false);
-        DrawButton("Zurück", startY + spacing*3, mx, my, false);
+        std::string screenText = std::string("Modus: ") + (GlobalSettings::isFullscreen ? "Vollbild" : "Fenster"); DrawButton(screenText.c_str(), startY + spacing*2.0f, mx, my, false);
+        DrawButton("Zurück", startY + spacing*3.0f, mx, my, false);
     }
 }
